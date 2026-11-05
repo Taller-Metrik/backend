@@ -13,7 +13,7 @@
 [![Docker](https://img.shields.io/badge/Docker-imagen-2496ED?logo=docker&logoColor=white)](Dockerfile)
 [![Cloud Run](https://img.shields.io/badge/Google_Cloud_Run-producción-4285F4?logo=googlecloud&logoColor=white)](#despliegue)
 [![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI%2FCD-2088FF?logo=githubactions&logoColor=white)](.github/workflows)
-[![Pruebas](https://img.shields.io/badge/pruebas-100_pasando-2EA44F?logo=pytest&logoColor=white)](#pruebas)
+[![Pruebas](https://img.shields.io/badge/pruebas-101_pasando-2EA44F?logo=pytest&logoColor=white)](#pruebas)
 
 [Inicio rápido](#inicio-rapido) ·
 [Arquitectura](#arquitectura) ·
@@ -414,7 +414,7 @@ Se leen de `.env` (desarrollo) o del entorno del contenedor (producción) a trav
 | `APP_NAME` · `APP_VERSION` · `API_PREFIX` | No | `MetriK API` · `0.1.0` · `/api/v1` | Metadatos y prefijo de la API. |
 | `RDP_EPSILON_M` | No | `0.10` | Tolerancia de simplificación del trazo (m). |
 | `SNAP_TOLERANCE_DEG` | No | `15.0` | Tolerancia para enderezar ángulos (°). |
-| `CLOSURE_TOLERANCE_M` | No | `1.0` | Distancia máxima para considerar cerrado un recorrido (m). |
+| `CLOSURE_TOLERANCE_M` | No | `1.0` | Tolerancia base de cierre (m). Con esquinas marcadas es fija; con trazo crece al 5 % de lo recorrido, hasta 3 m. |
 | `GPS_MAX_ACCURACY_M` | No | `10.0` | Precisión GPS máxima aceptada por lectura (m). |
 | `GPS_CALIBRATION_THRESHOLD_M` | No | `8.0` | Umbral de error para recomendar calibración (m). |
 | `TEST_DATABASE_URL` | No | SQLite en memoria | Solo pruebas: PostgreSQL real para la integración. |
@@ -525,10 +525,10 @@ python scripts/generar_evidencias.py    # captura .png + descripción .txt de ca
 <!-- AUTO-GENERATED: tests/ -->
 | Tipo | Carpeta | Pruebas | Qué cubren |
 |------|---------|--------:|------------|
-| Unitarias | `tests/unit/` | 58 | Algoritmos aislados: geometría, suavizado, GPS, escala, DXF, ML, seguridad |
+| Unitarias | `tests/unit/` | 59 | Algoritmos aislados: geometría, suavizado, GPS, escala, DXF, ML, seguridad |
 | Integración | `tests/integration/` | 34 | Endpoints con base de datos real |
 | Funcionales | `tests/functional/` | 8 | Flujos completos de usuario, del registro al plano DXF |
-| **Total** | | **100** | |
+| **Total** | | **101** | |
 <!-- /AUTO-GENERATED -->
 
 ---

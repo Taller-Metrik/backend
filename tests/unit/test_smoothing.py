@@ -130,3 +130,37 @@ def test_reparticion_error_cierre(evidencia):
     assert r.closure_error_m == pytest.approx(0.064, abs=0.002)
     assert all(a == pytest.approx(90, abs=0.01) for a in an.interior_angles_deg)
     assert w[0] == pytest.approx(w[2], abs=1e-6) and w[1] == pytest.approx(w[3], abs=1e-6)
+
+
+def _recorrido(vertices: list[tuple[float, float]], paso: float = 0.10) -> list[tuple[float, float]]:
+    """Caminata por los vértices dados con un punto cada `paso` metros (10 cm)."""
+    pts = [vertices[0]]
+    for (x0, y0), (x1, y1) in zip(vertices, vertices[1:]):
+        n = max(1, round(((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5 / paso))
+        pts += [(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n) for k in range(1, n + 1)]
+    return pts
+
+
+@pytest.mark.evidencia(
+    id="BU-60",
+    nombre="Cierre adaptativo del recorrido",
+    requisito="EX-01",
+    objetivo="Verificar que la tolerancia de cierre crece con lo recorrido (5 %, entre 1 y 3 m) "
+    "y que se descarta lo caminado después de volver al inicio.",
+    entrada="Cuadrado 15×15 m que termina a 2 m del inicio; rectángulo 5×4 m que se pasa 1,5 m; "
+    "cuadrado con un hueco de 6 m",
+    esperado="Cerrado con 4 lados; cerrado con 20 m²; abierto",
+)
+def test_cierre_adaptativo(evidencia):
+    cuadrado = smooth_track(_recorrido([(0, 0), (15, 0), (15, 15), (0, 15), (0, 2)]))
+    pasado = smooth_track(_recorrido([(0, 0), (5, 0), (5, 4), (0, 4), (0, 0), (1.5, 0)]))
+    hueco = smooth_track(_recorrido([(0, 0), (15, 0), (15, 15), (0, 15), (0, 6)]))
+    area_pasado = analyze(pasado.vertices).area_m2
+    evidencia["obtenido"] = (
+        f"15×15 a 2 m: closed={cuadrado.closed}, lados={len(cuadrado.vertices)}; "
+        f"5×4 pasado 1,5 m: closed={pasado.closed}, área={area_pasado:.2f} m²; "
+        f"hueco 6 m: closed={hueco.closed}"
+    )
+    assert cuadrado.closed is True and len(cuadrado.vertices) == 4
+    assert pasado.closed is True and area_pasado == pytest.approx(20.0, abs=0.1)
+    assert hueco.closed is False
