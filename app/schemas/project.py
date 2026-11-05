@@ -1,0 +1,82 @@
+from datetime import datetime
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.models.survey import SurveyMode
+
+Point = tuple[float, float]
+
+
+class ProjectCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+
+
+class ProjectUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+
+
+class ProjectOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: str | None
+    created_at: datetime
+
+
+class GpsPoint(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    accuracy_m: float = Field(default=5.0, ge=0)
+    timestamp_s: float | None = None
+
+
+class SurveyCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    mode: SurveyMode = SurveyMode.INTERIOR
+    device_model: str | None = Field(default=None, max_length=120)
+    points: Annotated[list[Point], Field(max_length=200_000)] = Field(
+        default_factory=list, description="Trazo crudo del odómetro (x, y) en metros"
+    )
+    corners: list[Point] | None = Field(default=None, description="Esquinas marcadas (o vértices del plano importado)")
+    gps_points: list[GpsPoint] | None = Field(default=None, description="Lecturas GPS (modo exterior)")
+    scale_denominator: int | None = Field(default=None, description="Escala del plano; si no se envía se sugiere")
+
+    @model_validator(mode="after")
+    def check_inputs(self) -> "SurveyCreate":
+        if self.mode == SurveyMode.EXTERIOR:
+            if not self.gps_points or len(self.gps_points) < 3:
+                raise ValueError("El modo exterior requiere al menos 3 lecturas GPS")
+        elif self.mode == SurveyMode.IMPORTED:
+            if not self.corners or len(self.corners) < 3:
+                raise ValueError("El modo importado requiere al menos 3 vértices en 'corners'")
+        elif len(self.points) < 3 and (not self.corners or len(self.corners) < 3):
+            raise ValueError("El modo interior requiere el trazo ('points') o las esquinas ('corners')")
+        return self
+
+
+class SurveySummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    name: str
+    mode: SurveyMode
+    area_m2: float
+    perimeter_m: float
+    closed: bool
+    scale_denominator: int
+    created_at: datetime
+
+
+class SurveyOut(SurveySummary):
+    device_model: str | None
+    vertices: list[Point]
+    wall_lengths_m: list[float]
+    interior_angles_deg: list[float]
+    closure_error_m: float
+    is_simple: bool
+    concave_count: int

@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -25,9 +26,17 @@ API = "/api/v1"
 
 def _make_engine():
     if TEST_DATABASE_URL.startswith("sqlite"):
-        return create_async_engine(
+        engine = create_async_engine(
             TEST_DATABASE_URL, connect_args={"check_same_thread": False}, poolclass=StaticPool
         )
+
+        @event.listens_for(engine.sync_engine, "connect")
+        def _enable_foreign_keys(dbapi_connection, _record):  # SQLite no aplica FK/CASCADE por defecto
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+        return engine
     return create_async_engine(TEST_DATABASE_URL)
 
 
@@ -87,3 +96,10 @@ async def auth_client(client: AsyncClient, registered_user: dict) -> AsyncClient
 @pytest.fixture
 def api() -> str:
     return API
+
+
+@pytest_asyncio.fixture
+async def project(auth_client: AsyncClient) -> dict:
+    resp = await auth_client.post(f"{API}/projects", json={"name": "Pabellón A", "description": "Aulas del 2.º piso"})
+    assert resp.status_code == 201, resp.text
+    return resp.json()
