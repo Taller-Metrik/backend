@@ -44,7 +44,7 @@ jobs:
             exit 1
           fi
           if ! echo "$GCP_CREDENTIALS" | jq -e '.type == "service_account" and .project_id and .client_email and .private_key' > /dev/null; then
-            echo "::error::GCP_CREDENTIALS no es una llave JSON de cuenta de servicio válida. Debe pegarse el archivo .json completo, desde { hasta }."
+            echo "::error::GCP_CREDENTIALS no es una llave JSON de cuenta de servicio válida. Pegue el archivo .json descargado, completo y sin editar (sin comentarios). Si el error menciona 'control characters', la private_key se partió en varias líneas al copiarla: debe quedar en una sola línea con los saltos escritos como \\n."
             exit 1
           fi
 
@@ -69,14 +69,51 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Proyecto: $PROJECT_ID · Región: $REGION · Servicio: $SERVICE · Cuenta: $RUNTIME_SA"
 
-      - name: Verificar secretos de la app en Secret Manager
+      - name: Sincronizar secretos de GitHub con Secret Manager
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
         run: |
-          for S in metrik-database-url metrik-secret-key; do
-            if ! gcloud secrets describe "$S" --project "$PROJECT_ID" > /dev/null 2>&1; then
-              echo "::error::No existe el secreto '$S' en Secret Manager (o la cuenta no puede verlo). Ver docs/RUNBOOK.md, sección 1."
+          # Quita espacios y saltos de línea que se cuelan al pegar el valor en GitHub
+          trim() { local v="${1//$'\r'/}"; v="${v#"${v%%[![:space:]]*}"}"; printf '%s' "${v%"${v##*[![:space:]]}"}"; }
+
+          # Crea el secreto o agrega una versión nueva solo si el valor cambió
+          upsert() {
+            local name="$1" value="$2"
+            if ! gcloud secrets describe "$name" --project "$PROJECT_ID" > /dev/null 2>&1; then
+              printf '%s' "$value" | gcloud secrets create "$name" --project "$PROJECT_ID" \
+                --replication-policy automatic --data-file=- > /dev/null
+              echo "Secreto '$name' creado"
+            elif [ "$(gcloud secrets versions access latest --secret "$name" --project "$PROJECT_ID")" != "$value" ]; then
+              printf '%s' "$value" | gcloud secrets versions add "$name" --project "$PROJECT_ID" --data-file=- > /dev/null
+              echo "Secreto '$name' actualizado"
+            else
+              echo "Secreto '$name' sin cambios"
+            fi
+          }
+
+          DB_URL=$(trim "$DATABASE_URL")
+          if [ -z "$DB_URL" ]; then
+            echo "::error::Falta el secreto DATABASE_URL en GitHub (Settings → Secrets and variables → Actions → Secrets)."
+            exit 1
+          fi
+          upsert metrik-database-url "$DB_URL"
+
+          KEY=$(trim "$SECRET_KEY")
+          if [ -n "$KEY" ]; then
+            if [ ${#KEY} -lt 32 ]; then
+              echo "::error::El secreto SECRET_KEY debe tener al menos 32 caracteres."
               exit 1
             fi
-          done
+            upsert metrik-secret-key "$KEY"
+          elif gcloud secrets describe metrik-secret-key --project "$PROJECT_ID" > /dev/null 2>&1; then
+            echo "Secreto 'metrik-secret-key' existente (se reutiliza)"
+          else
+            KEY=$(openssl rand -base64 48 | tr -d '\n')
+            echo "::add-mask::$KEY"
+            upsert metrik-secret-key "$KEY"
+            echo "SECRET_KEY generada automáticamente (se reutilizará en los siguientes despliegues)"
+          fi
 
       - name: Construir y subir imagen a Artifact Registry
         run: |
