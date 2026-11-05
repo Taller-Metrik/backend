@@ -37,7 +37,7 @@ class GpsPoint(BaseModel):
 class CaptureIn(BaseModel):
     """Metadatos de captura enviados por la app (variables del modelo de ML)."""
 
-    odometry: Literal["arcore", "steps", "demo"] = "arcore"  # demo: recorrido simulado de la app
+    odometry: Literal["arcore", "steps"] = "arcore"
     tracking_loss_s: float = Field(default=0.0, ge=0)
     duration_s: float | None = Field(default=None, gt=0)
 

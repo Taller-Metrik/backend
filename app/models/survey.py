@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, func
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -53,6 +53,13 @@ class Survey(Base):
 
     # Validación (medida real del área, opcional; las de cada muro van en ReferenceMeasurement)
     real_area_m2: Mapped[float | None] = mapped_column(Float, default=None)
+
+    # Origen: "app" (medido con MetriK) o "importado" (mediciones de campo importadas)
+    source: Mapped[str] = mapped_column(String(20), default="app", server_default=text("'app'"))
+    source_ref: Mapped[str | None] = mapped_column(String(120), unique=True, default=None)
+    place_name: Mapped[str | None] = mapped_column(String(120), default=None)
+    measured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    source_meta: Mapped[dict[str, Any] | None] = mapped_column(JsonType, default=None)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

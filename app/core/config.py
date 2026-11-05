@@ -3,7 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/metrik"
+
+    @field_validator("database_url")
+    @classmethod
+    def _normalize_url(cls, v: str) -> str:
+        return normalize_database_url(v)
 
     secret_key: str = Field(default="cambiar-en-produccion-clave-de-al-menos-32-caracteres", min_length=32)
     jwt_algorithm: str = "HS256"
@@ -32,6 +37,29 @@ class Settings(BaseSettings):
 
     # Modelos de ML (ver ml/README.md)
     ml_models_dir: Path = Path(__file__).resolve().parents[3] / "ml" / "modelos"
+
+
+def normalize_database_url(url: str) -> str:
+    """Convierte la URL que entrega el proveedor (postgres://, postgresql://, ?sslmode=require)
+    al formato del driver asíncrono asyncpg (postgresql+asyncpg://, ?ssl=require)."""
+    u = url.strip()
+    for prefix in ("postgres://", "postgresql://"):
+        if u.startswith(prefix):
+            u = "postgresql+asyncpg://" + u[len(prefix):]
+            break
+    if u.startswith("postgresql+asyncpg://") and "?" in u:
+        base, query = u.split("?", 1)
+        params = []
+        for part in query.split("&"):
+            key, _, value = part.partition("=")
+            if key == "sslmode":
+                params.append(f"ssl={'require' if value in ('require', 'verify-ca', 'verify-full', 'prefer') else value}")
+            elif key in ("channel_binding", "options"):
+                continue  # no soportados por asyncpg
+            else:
+                params.append(part)
+        u = base + ("?" + "&".join(params) if params else "")
+    return u
 
 
 @lru_cache
