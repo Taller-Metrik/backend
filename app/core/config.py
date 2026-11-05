@@ -1,6 +1,7 @@
 """Configuración de la aplicación cargada desde variables de entorno (.env)."""
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -28,6 +29,9 @@ class Settings(BaseSettings):
     closure_tolerance_m: float = 1.0
     gps_max_accuracy_m: float = 10.0
     gps_calibration_threshold_m: float = 8.0
+
+    # Modelos de ML (ver ml/README.md)
+    ml_models_dir: Path = Path(__file__).resolve().parents[3] / "ml" / "modelos"
 
 
 @lru_cache
