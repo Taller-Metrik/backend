@@ -51,7 +51,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ## Pruebas
 
 ```bash
-pytest                       # 89 pruebas (SQLite en memoria)
+pytest                       # 90 pruebas (SQLite en memoria)
 pytest --cov                 # con cobertura
 set TEST_DATABASE_URL=postgresql+asyncpg://usuario:clave@localhost:5432/metrik_test
 pytest                       # integración contra PostgreSQL real
@@ -61,7 +61,7 @@ python scripts/generar_evidencias.py   # captura .png + descripción .txt por pr
 | Tipo | Carpeta | Cantidad |
 |------|---------|----------|
 | Unitarias | `tests/unit/` | 53 |
-| Integración | `tests/integration/` | 28 |
+| Integración | `tests/integration/` | 29 |
 | Funcionales | `tests/functional/` | 8 |
 
 Evidencias en [`../evidencias/backend/`](../evidencias/backend/README.md).

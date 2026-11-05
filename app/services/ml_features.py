@@ -5,7 +5,7 @@ Ver docs/06-dataset-ml.md, sección 4.
 
 from dataclasses import dataclass
 
-ODOMETRY_CODES = {"arcore": 0, "steps": 1}
+ODOMETRY_CODES = {"arcore": 0, "steps": 1, "demo": 0}  # demo simula un trazo tipo ARCore
 
 WALL_FEATURES: list[str] = [
     "measured_length_m",
@@ -40,7 +40,7 @@ SURVEY_FEATURES: list[str] = [
 class CaptureInfo:
     """Metadatos de captura enviados por la app."""
 
-    odometry: str = "arcore"  # "arcore" | "steps"
+    odometry: str = "arcore"  # "arcore" | "steps" | "demo"
     tracking_loss_s: float = 0.0
     duration_s: float | None = None
 

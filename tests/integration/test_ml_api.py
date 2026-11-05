@@ -53,6 +53,26 @@ async def test_ml_recorrido(auth_client, project, api, evidencia):
 
 
 @pytest.mark.evidencia(
+    id="BI-29",
+    nombre="Recorrido del modo demostración de la app",
+    requisito="RF-15, RF-17",
+    objetivo="Verificar que el backend acepta el recorrido que envía la app en modo demo (capture.odometry='demo').",
+    entrada="POST /projects/{id}/surveys con capture={odometry:'demo', tracking_loss_s:0, duration_s:18.5}",
+    esperado="HTTP 201 y análisis ML disponible (HTTP 200)",
+)
+async def test_recorrido_modo_demo(auth_client, project, api, evidencia):
+    s = await auth_client.post(
+        f"{api}/projects/{project['id']}/surveys",
+        json={"name": "Aula demo", "points": simulate_walk(RECTANGULO_5x4),
+              "capture": {"odometry": "demo", "tracking_loss_s": 0, "duration_s": 18.5}},
+    )
+    ml = await auth_client.get(f"{api}/surveys/{s.json()['id']}/ml")
+    evidencia["obtenido"] = f"crear HTTP {s.status_code}, ML HTTP {ml.status_code}"
+    assert s.status_code == 201
+    assert ml.status_code == 200
+
+
+@pytest.mark.evidencia(
     id="BI-28",
     nombre="ML no aplica a recorridos exteriores",
     requisito="RF-15",
