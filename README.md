@@ -293,7 +293,7 @@ según el tráfico, sin administrar servidores.
 | 🚀 API | **Cloud Run**, servicio `metrik-api` | 1 vCPU · 1 GiB RAM · 0 a 3 instancias · puerto 8080 |
 | ⚙️ Migraciones | **Cloud Run Jobs**, `metrik-api-migraciones` | Ejecuta `alembic upgrade head` antes de cada despliegue |
 | 📦 Imágenes | **Artifact Registry**, repositorio `metrik` | Una imagen por commit (`:<sha>`), lo que permite volver atrás |
-| 🔐 Secretos | **Secret Manager** | `metrik-database-url` y `metrik-secret-key`; nunca se guardan en GitHub ni en la imagen |
+| 🔐 Secretos | **Secret Manager** | `metrik-database-url` y `metrik-secret-key`; el CD los sincroniza desde los secretos de GitHub y nunca quedan en la imagen |
 | 🐘 Base de datos | **PostgreSQL gestionado** (Neon) | Fuera de GCP; conexión con SSL y compatible con su *pooler* |
 | 🔑 Acceso de GitHub | **Cuenta de servicio** `metrik-cicd` | Su llave JSON se guarda como secreto `GCP_CREDENTIALS`; el proyecto y la cuenta se leen del propio JSON |
 
@@ -344,8 +344,8 @@ revisión anterior, sin reconstruir nada.
 1. Crear un proyecto en Google Cloud con facturación activa.
 2. Seguir [`docs/RUNBOOK.md` § 1](docs/RUNBOOK.md#1-configuración-inicial-en-google-cloud-una-sola-vez),
    por consola o con `gcloud`: activar las APIs, crear la cuenta de servicio `metrik-cicd` con sus roles,
-   **descargar su llave JSON** y crear los secretos `metrik-database-url` y `metrik-secret-key`.
-3. En GitHub, crear el secreto **`GCP_CREDENTIALS`** y pegar **el JSON completo** ([detalle abajo](#variables-en-github-para-el-despliegue)).
+   **descargar su llave JSON**.
+3. En GitHub, crear los secretos **`GCP_CREDENTIALS`** (el JSON completo) y **`DATABASE_URL`** ([detalle abajo](#variables-en-github-para-el-despliegue)).
 4. Hacer merge a `main`. El primer despliegue se ejecuta solo y crea el repositorio de imágenes si no existe.
 
 ---
@@ -357,7 +357,7 @@ revisión anterior, sin reconstruir nada.
 | Workflow | Se ejecuta en | Pasos |
 |----------|---------------|-------|
 | [`ci.yml`](.github/workflows/ci.yml) | PR a `develop` o `main` · push a `develop` | • Pruebas con **SQLite** y con **PostgreSQL 16** (matriz)<br/>• Cobertura de `app/`<br/>• `alembic upgrade head` sobre una base vacía<br/>• `docker build` + arranque del contenedor<br/>• Prueba de humo: `/health` y `/api/v1/ml/info` |
-| [`cd.yml`](.github/workflows/cd.yml) | Push a `main` · manual (*Run workflow*) | • Reutiliza todo el CI<br/>• Valida la llave JSON `GCP_CREDENTIALS` y lee de ella el proyecto y la cuenta<br/>• Imagen → Artifact Registry (`:<sha>`; crea el repositorio si no existe)<br/>• Migraciones en Cloud Run Job<br/>• Despliegue en Cloud Run con secretos de Secret Manager<br/>• Prueba de humo contra la URL pública |
+| [`cd.yml`](.github/workflows/cd.yml) | Push a `main` · manual (*Run workflow*) | • Reutiliza todo el CI<br/>• Valida la llave JSON `GCP_CREDENTIALS` y lee de ella el proyecto y la cuenta<br/>• Sincroniza `DATABASE_URL` / `SECRET_KEY` de GitHub con Secret Manager<br/>• Imagen → Artifact Registry (`:<sha>`; crea el repositorio si no existe)<br/>• Migraciones en Cloud Run Job<br/>• Despliegue en Cloud Run con secretos de Secret Manager<br/>• Prueba de humo contra la URL pública |
 
 ### Flujo de ramas
 
@@ -422,26 +422,26 @@ Se leen de `.env` (desarrollo) o del entorno del contenedor (producción) a trav
 
 ### Variables en GitHub para el despliegue
 
-**Lo único obligatorio es un secreto:** en **Settings → Secrets and variables → Actions → *Secrets* →
+**Solo hacen falta dos secretos.** Se crean en **Settings → Secrets and variables → Actions → *Secrets* →
 New repository secret**.
 
 | Secreto | Obligatorio | Valor |
 |---------|:-----------:|-------|
 | `GCP_CREDENTIALS` | **Sí** | **El JSON completo** de la llave de la cuenta de servicio, tal como lo descarga Google Cloud (desde `{` hasta `}`) |
+| `DATABASE_URL` | **Sí** | URL de conexión de Neon, tal cual (`postgresql://usuario:clave@host/metrik?sslmode=require`) |
+| `SECRET_KEY` | No | Clave de 32+ caracteres para los tokens. Si no se define, el CD genera una la primera vez y la reutiliza |
 
-```jsonc
-{
-  "type": "service_account",
-  "project_id": "metrik-prod",                          // ← el CD toma el proyecto de aquí
-  "private_key_id": "…",
-  "private_key": "-----BEGIN PRIVATE KEY-----\n…",
-  "client_email": "metrik-cicd@metrik-prod.iam.gserviceaccount.com",   // ← y la cuenta de aquí
-  …
-}
-```
+El CD copia estos valores a **Secret Manager** (`metrik-database-url`, `metrik-secret-key`), y Cloud Run
+los lee desde ahí. No hay que crear nada a mano en Secret Manager.
 
-El CD comprueba que el JSON esté completo y sea de una cuenta de servicio antes de desplegar; si no, se
-detiene con un mensaje claro. **Nunca subas este archivo al repositorio.**
+> ⚠️ Pega el archivo **tal como lo descarga Google Cloud**, abierto en el Bloc de notas y copiado con
+> `Ctrl+A` / `Ctrl+C`. No le agregues comentarios ni lo reformatees: la `private_key` debe quedar en
+> **una sola línea** con los saltos escritos como `\n`, y los `-----BEGIN/END PRIVATE KEY-----` son
+> parte de la llave.
+
+Del JSON, el CD toma automáticamente el proyecto (`project_id`) y la cuenta (`client_email`). Antes de
+desplegar comprueba que el JSON sea válido y de una cuenta de servicio; si no, se detiene con un mensaje
+claro. **Nunca subas este archivo al repositorio.**
 
 Opcionalmente, en la pestaña ***Variables***, solo si quieres cambiar los valores por defecto:
 
@@ -458,8 +458,8 @@ Opcionalmente, en la pestaña ***Variables***, solo si quieres cambiar los valor
 
 | Variable | De dónde sale |
 |----------|---------------|
-| `DATABASE_URL` | Secret Manager → `metrik-database-url` |
-| `SECRET_KEY` | Secret Manager → `metrik-secret-key` |
+| `DATABASE_URL` | Secreto de GitHub `DATABASE_URL` → Secret Manager `metrik-database-url` |
+| `SECRET_KEY` | Secreto de GitHub `SECRET_KEY` (o generada) → Secret Manager `metrik-secret-key` |
 | `DEBUG` | Fija en `false` |
 | `ALLOWED_ORIGINS` · `ACCESS_TOKEN_EXPIRE_MINUTES` | Variables de GitHub (o el valor por defecto) |
 | `PORT` | La inyecta Cloud Run (`8080`) |
