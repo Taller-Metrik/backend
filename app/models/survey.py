@@ -48,6 +48,9 @@ class Survey(Base):
     concave_count: Mapped[int] = mapped_column(Integer, default=0)
     scale_denominator: Mapped[int] = mapped_column(Integer)
 
+    # Validación (medida real del área, opcional; las de cada muro van en ReferenceMeasurement)
+    real_area_m2: Mapped[float | None] = mapped_column(Float, default=None)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="surveys")
