@@ -9,15 +9,12 @@ from app.models.survey import Survey, SurveyMode
 from app.models.user import User
 from app.schemas.project import ProjectCreate, ProjectUpdate, SurveyCreate
 from app.services import geometry, scale
+from app.services.gps import GpsReading, gps_polygon
 from app.services.smoothing import smooth_track
 
 
 class NotFoundError(Exception):
     """El recurso no existe o no pertenece al usuario."""
-
-
-class UnsupportedModeError(Exception):
-    """Modo de recorrido aún no disponible."""
 
 
 class ProjectService:
@@ -113,7 +110,8 @@ class SurveyService:
         }
 
     def _process_exterior(self, payload: SurveyCreate) -> list[geometry.Point]:
-        raise UnsupportedModeError("El modo exterior (GPS) aún no está disponible")
+        readings = [GpsReading(**g.model_dump()) for g in payload.gps_points or []]
+        return gps_polygon(readings, max_accuracy_m=settings.gps_max_accuracy_m).vertices
 
     async def list(self, project_id: int) -> list[Survey]:
         await self.projects.get(project_id)
