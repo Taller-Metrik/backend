@@ -10,7 +10,14 @@ import pandas as pd
 
 from app.core.config import settings
 from app.models.survey import Survey, SurveyMode
-from app.services.ml_features import SURVEY_FEATURES, WALL_FEATURES, CaptureInfo, survey_features, wall_features
+from app.services.ml_features import (
+    ODOMETRY_CODES,
+    SURVEY_FEATURES,
+    WALL_FEATURES,
+    CaptureInfo,
+    survey_features,
+    wall_features,
+)
 
 CORRECTOR_FILE = "corrector_muros.joblib"
 CLASSIFIER_FILE = "clasificador_recorrido.joblib"
@@ -55,6 +62,8 @@ class MlAnalysis:
     corrector_model: str
     classifier_model: str
     version: str
+    correction_applied: bool = True
+    correction_note: str = ""
 
 
 def analyze_features(
@@ -65,8 +74,14 @@ def analyze_features(
     X_survey = pd.DataFrame([survey_feats])[SURVEY_FEATURES]
     probability = float(classifier["modelo"].predict_proba(X_survey)[0, 1])
 
-    X_walls = pd.DataFrame(wall_features(survey_feats, wall_lengths_m))[WALL_FEATURES]
-    predicted_error = corrector["modelo"].predict(X_walls)
+    # La corrección M1 solo mejora recorridos ARCore: con mediciones de campo reales por pasos
+    # empeoró el MAE (1,56 → 2,03 m, docs/06 §7), así que en ese modo no se aplica.
+    apply_correction = survey_feats.get("odometry", 0.0) == ODOMETRY_CODES["arcore"]
+    if apply_correction:
+        X_walls = pd.DataFrame(wall_features(survey_feats, wall_lengths_m))[WALL_FEATURES]
+        predicted_error = corrector["modelo"].predict(X_walls)
+    else:
+        predicted_error = [0.0] * len(wall_lengths_m)
     walls = [
         WallCorrection(wall_index=i, measured_m=m, corrected_m=float(m - e), correction_m=float(-e))
         for i, (m, e) in enumerate(zip(wall_lengths_m, predicted_error, strict=True))
@@ -85,6 +100,12 @@ def analyze_features(
         corrector_model=corrector["info"]["modelo_elegido"],
         classifier_model=classifier["info"]["modelo_elegido"],
         version=corrector["info"].get("version", ""),
+        correction_applied=apply_correction,
+        correction_note=(
+            "Corrección aplicada (modelo entrenado para el odómetro ARCore)"
+            if apply_correction
+            else "Sin corrección: en datos reales por pasos el modelo no reduce el error"
+        ),
     )
 
 

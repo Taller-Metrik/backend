@@ -97,3 +97,24 @@ def test_modelos_faltantes(tmp_path, evidencia):
         ml_service.load_models(tmp_path)
     evidencia["obtenido"] = f"ModelsNotAvailableError: {exc.value}"
     assert "entrenar_modelos.py" in str(exc.value)
+
+
+@pytest.mark.evidencia(
+    id="BU-57",
+    nombre="Sin corrección M1 en recorridos por pasos",
+    requisito="RF-15",
+    objetivo="Verificar que la corrección solo se aplica al odómetro ARCore (en datos reales por pasos empeoraba el error).",
+    entrada="Mismos muros con captura 'steps' y con captura 'arcore'",
+    esperado="steps: medidas sin cambio y nota explicativa; arcore: corrección aplicada",
+)
+def test_sin_correccion_en_pasos(evidencia):
+    walls = [4.94, 3.94, 4.94, 3.94]
+    pasos = ml_service.analyze_features(survey_features(wall_lengths_m=walls, capture=CaptureInfo("steps", 0.0, 22.0), **BASE), walls)
+    arcore = ml_service.analyze_features(survey_features(wall_lengths_m=walls, capture=CaptureInfo("arcore", 0.0, 22.0), **BASE), walls)
+    evidencia["obtenido"] = (
+        f"steps: aplicada={pasos.correction_applied}, corregidas={[w.corrected_m for w in pasos.walls]} ('{pasos.correction_note}'); "
+        f"arcore: aplicada={arcore.correction_applied}"
+    )
+    assert pasos.correction_applied is False
+    assert [w.corrected_m for w in pasos.walls] == walls
+    assert arcore.correction_applied is True

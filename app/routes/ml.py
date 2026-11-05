@@ -30,6 +30,8 @@ class MlAnalysisOut(BaseModel):
     corrector_model: str
     classifier_model: str
     version: str
+    correction_applied: bool
+    correction_note: str
 
 
 _UNAVAILABLE = status.HTTP_503_SERVICE_UNAVAILABLE
