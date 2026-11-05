@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     gps_max_accuracy_m: float = 10.0
     gps_calibration_threshold_m: float = 8.0
 
-    # Modelos de ML (ver ml/README.md)
-    ml_models_dir: Path = Path(__file__).resolve().parents[3] / "ml" / "modelos"
+    # Modelos de ML entrenados (.joblib) incluidos en el repositorio
+    ml_models_dir: Path = Path(__file__).resolve().parents[2] / "ml" / "modelos"
 
 
 def normalize_database_url(url: str) -> str:
