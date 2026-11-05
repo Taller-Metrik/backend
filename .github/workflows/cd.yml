@@ -14,7 +14,7 @@ concurrency:
 
 env:
   # Opcionales: si no se definen como variables del repositorio se usan estos valores
-  REGION: ${{ vars.GCP_REGION || 'southamerica-west1' }}
+  REGION: ${{ vars.GCP_REGION || 'us-east4' }}
   SERVICE: ${{ vars.CLOUD_RUN_SERVICE || 'metrik-api' }}
   GAR_REPOSITORY: ${{ vars.GAR_REPOSITORY || 'metrik' }}
   # Nombres de los secretos de la app en Google Secret Manager
