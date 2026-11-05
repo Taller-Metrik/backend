@@ -110,12 +110,13 @@ class SurveyService:
             "scale_denominator": denominator,
             "snapped_edges": snapped,
             "total_edges": total,
-            "capture": payload.capture.model_dump() if payload.capture else None,
+            "capture": payload.capture.model_dump() if payload.capture
+            else ({"transport": payload.transport} if payload.mode == SurveyMode.EXTERIOR else None),
         }
 
     def _process_exterior(self, payload: SurveyCreate) -> list[geometry.Point]:
         readings = [GpsReading(**g.model_dump()) for g in payload.gps_points or []]
-        return gps_polygon(readings, max_accuracy_m=settings.gps_max_accuracy_m).vertices
+        return gps_polygon(readings, transport=payload.transport).vertices
 
     async def list(self, project_id: int) -> list[Survey]:
         await self.projects.get(project_id)
@@ -129,6 +130,13 @@ class SurveyService:
         if survey is None:
             raise NotFoundError
         await self.projects.get(survey.project_id)  # verifica propiedad
+        return survey
+
+    async def rename(self, survey_id: int, name: str) -> Survey:
+        survey = await self.get(survey_id)
+        survey.name = name.strip()
+        await self.db.commit()
+        await self.db.refresh(survey)
         return survey
 
     async def delete(self, survey_id: int) -> None:

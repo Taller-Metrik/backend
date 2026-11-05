@@ -14,6 +14,25 @@ EARTH_RADIUS_M = 6_371_000.0
 
 
 @dataclass(frozen=True)
+class TransportProfile:
+    """Configuración del GPS según cómo se recorre el terreno (evita saltos y trazos imposibles)."""
+
+    label: str
+    max_speed_mps: float  # velocidad máxima creíble; una lectura que la supera es un salto del GPS
+    max_accuracy_m: float  # se descartan lecturas menos precisas
+    process_noise: float  # aceleración esperada (m/s²) para el filtro de Kalman
+    min_interval_s: float  # intervalo de muestreo recomendado en la app
+
+
+TRANSPORT_PROFILES: dict[str, TransportProfile] = {
+    "walk": TransportProfile("Caminata", max_speed_mps=3.0, max_accuracy_m=10.0, process_noise=0.5, min_interval_s=1.0),
+    "bike": TransportProfile("Bicicleta", max_speed_mps=12.0, max_accuracy_m=12.0, process_noise=1.5, min_interval_s=1.0),
+    "moto": TransportProfile("Moto", max_speed_mps=30.0, max_accuracy_m=15.0, process_noise=3.0, min_interval_s=0.5),
+    "car": TransportProfile("Carro", max_speed_mps=40.0, max_accuracy_m=15.0, process_noise=4.0, min_interval_s=0.5),
+}
+
+
+@dataclass(frozen=True)
 class GpsReading:
     lat: float
     lon: float
@@ -47,6 +66,21 @@ def filter_by_accuracy(readings: list[GpsReading], max_accuracy_m: float) -> tup
     """Descarta lecturas cuya precisión reportada supera el umbral. Devuelve (válidas, descartadas)."""
     valid = [r for r in readings if r.accuracy_m <= max_accuracy_m]
     return valid, len(readings) - len(valid)
+
+
+def filter_speed_jumps(readings: list["GpsReading"], max_speed_mps: float) -> tuple[list["GpsReading"], int]:
+    """Descarta lecturas que implican una velocidad imposible para el transporte (saltos del GPS)."""
+    kept: list[GpsReading] = []
+    dropped = 0
+    for r in readings:
+        if kept and r.timestamp_s is not None and kept[-1].timestamp_s is not None:
+            dt = r.timestamp_s - kept[-1].timestamp_s
+            d = haversine((kept[-1].lat, kept[-1].lon), (r.lat, r.lon))
+            if dt > 0 and d / dt > max_speed_mps * 1.5:
+                dropped += 1
+                continue
+        kept.append(r)
+    return kept, dropped
 
 
 def kalman_smooth(
@@ -238,16 +272,21 @@ class GpsPolygon:
 def gps_polygon(
     readings: list[GpsReading],
     *,
-    max_accuracy_m: float = 10.0,
+    max_accuracy_m: float | None = None,
     simplify_epsilon_m: float | None = None,
     use_kalman: bool = True,
+    transport: str = "walk",
 ) -> GpsPolygon:
     """Convierte el recorrido GPS de un área en un polígono métrico (para área y perímetro).
 
     Si no se indica `simplify_epsilon_m`, se usa 2 × la precisión mediana de las lecturas:
     el ruido residual genera un zigzag que infla el perímetro (el área es mucho más robusta).
     """
+    profile = TRANSPORT_PROFILES.get(transport, TRANSPORT_PROFILES["walk"])
+    max_accuracy_m = max_accuracy_m if max_accuracy_m is not None else profile.max_accuracy_m
     valid, discarded = filter_by_accuracy(readings, max_accuracy_m)
+    valid, jumps = filter_speed_jumps(valid, profile.max_speed_mps)
+    discarded += jumps
     if len(valid) < 3:
         raise GeometryError(
             f"Solo {len(valid)} lecturas con precisión ≤ {max_accuracy_m} m; se necesitan al menos 3 (EX-04)"
@@ -256,7 +295,7 @@ def gps_polygon(
         simplify_epsilon_m = max(1.0, 2 * statistics.median(r.accuracy_m for r in valid))
     xy = to_enu(valid)
     if use_kalman and all(r.timestamp_s is not None for r in valid):
-        xy = kalman_smooth(xy, [r.timestamp_s for r in valid], [r.accuracy_m for r in valid])  # type: ignore[misc]
+        xy = kalman_smooth(xy, [r.timestamp_s for r in valid], [r.accuracy_m for r in valid], profile.process_noise)  # type: ignore[misc]
     vertices = rdp(xy, simplify_epsilon_m) if len(xy) > 3 else xy
     if len(vertices) > 3 and math.hypot(vertices[0][0] - vertices[-1][0], vertices[0][1] - vertices[-1][1]) < max(
         simplify_epsilon_m, 1.0

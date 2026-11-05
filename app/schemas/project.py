@@ -53,6 +53,7 @@ class SurveyCreate(BaseModel):
     gps_points: list[GpsPoint] | None = Field(default=None, description="Lecturas GPS (modo exterior)")
     scale_denominator: int | None = Field(default=None, description="Escala del plano; si no se envía se sugiere")
     capture: CaptureIn | None = Field(default=None, description="Metadatos de captura (modo interior)")
+    transport: Literal["walk", "bike", "moto", "car"] = Field(default="walk", description="Cómo se recorrió (modo exterior)")
 
     @model_validator(mode="after")
     def check_inputs(self) -> "SurveyCreate":
@@ -65,6 +66,10 @@ class SurveyCreate(BaseModel):
         elif len(self.points) < 3 and (not self.corners or len(self.corners) < 3):
             raise ValueError("El modo interior requiere el trazo ('points') o las esquinas ('corners')")
         return self
+
+
+class SurveyUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
 
 
 class SurveySummary(BaseModel):

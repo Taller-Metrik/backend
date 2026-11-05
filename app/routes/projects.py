@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.core.deps import CurrentUserDep, DbDep
 from app.services.dxf_export import DxfMetadata, build_dxf
-from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate, SurveyCreate, SurveyOut, SurveySummary
+from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate, SurveyCreate, SurveyOut, SurveySummary, SurveyUpdate
 from app.services.geometry import GeometryError
 from app.services.project_service import NotFoundError, ProjectService, SurveyService
 
@@ -117,6 +117,15 @@ async def export_dxf(
         media_type="application/dxf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.patch("/surveys/{survey_id}", response_model=SurveyOut)
+async def rename_survey(survey_id: int, payload: SurveyUpdate, db: DbDep, user: CurrentUserDep) -> SurveyOut:
+    """Cambia el nombre del recorrido (plano)."""
+    try:
+        return SurveyOut.model_validate(await SurveyService(db, user).rename(survey_id, payload.name))
+    except NotFoundError:
+        raise _NOT_FOUND from None
 
 
 @router.delete("/surveys/{survey_id}", status_code=status.HTTP_204_NO_CONTENT)
