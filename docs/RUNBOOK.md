@@ -14,7 +14,8 @@ GitHub (push a main)
 
 ## 1. Configuración inicial en Google Cloud (una sola vez)
 
-Son tres cosas: **una cuenta de servicio con su llave JSON**, **dos secretos** y **las APIs activadas**.
+Son dos cosas: **las APIs activadas** y **una cuenta de servicio con su llave JSON**. Los secretos de la
+app (`DATABASE_URL` y `SECRET_KEY`) **no se crean a mano**: el CD los copia desde GitHub a Secret Manager.
 
 ### Opción A — Consola web
 
@@ -29,16 +30,9 @@ Son tres cosas: **una cuenta de servicio con su llave JSON**, **dos secretos** y
      | **Administrador de Cloud Run** (`roles/run.admin`) | Desplegar el servicio y el job de migraciones |
      | **Administrador de Artifact Registry** (`roles/artifactregistry.admin`) | Crear el repositorio de imágenes la primera vez y subir imágenes |
      | **Usuario de cuenta de servicio** (`roles/iam.serviceAccountUser`) | Que Cloud Run ejecute con esta misma cuenta |
-     | **Descriptor de acceso a secretos de Secret Manager** (`roles/secretmanager.secretAccessor`) | Que la API lea `DATABASE_URL` y `SECRET_KEY` |
-     | **Visualizador de Secret Manager** (`roles/secretmanager.viewer`) | Que el CD compruebe que los secretos existen |
+     | **Administrador de Secret Manager** (`roles/secretmanager.admin`) | Que el CD cree y actualice `metrik-database-url` / `metrik-secret-key`, y que la API los lea |
 3. **Descargar la llave JSON.** Abrir la cuenta `metrik-cicd` → pestaña **Claves** → *Agregar clave →
    Crear clave nueva → JSON*. Se descarga un archivo `.json`: **ese es el que va a GitHub** (sección 2).
-4. **Crear los secretos.** En *Seguridad → Secret Manager → Crear secreto*:
-
-   | Nombre (exacto) | Valor |
-   |-----------------|-------|
-   | `metrik-database-url` | URL de conexión de Neon, tal cual (`postgresql://usuario:clave@host/metrik?sslmode=require`) |
-   | `metrik-secret-key` | Clave aleatoria de 32 caracteres o más: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 
 > Si la consola no permite crear la clave ("*Service account key creation is disabled*"), una política de
 > la organización bloquea las llaves JSON. En ese caso hay que pedir una excepción al administrador.
@@ -54,29 +48,31 @@ gcloud services enable run.googleapis.com artifactregistry.googleapis.com secret
 gcloud iam service-accounts create metrik-cicd --display-name="MetriK - CI/CD y ejecución"
 SA="metrik-cicd@$PROJECT_ID.iam.gserviceaccount.com"
 for ROLE in roles/run.admin roles/artifactregistry.admin roles/iam.serviceAccountUser \
-            roles/secretmanager.secretAccessor roles/secretmanager.viewer; do
+            roles/secretmanager.admin; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$SA" --role="$ROLE" --condition=None
 done
 
 # Llave JSON → pegar su contenido en GitHub y luego BORRAR el archivo local
 gcloud iam service-accounts keys create metrik-cicd.json --iam-account="$SA"
-
-# Secretos de la app
-printf '%s' 'postgresql://usuario:clave@host/metrik?sslmode=require' | gcloud secrets create metrik-database-url --data-file=-
-python -c "import secrets; print(secrets.token_urlsafe(48), end='')"  | gcloud secrets create metrik-secret-key --data-file=-
 ```
 
 ---
 
 ## 2. Configuración en GitHub
 
-### Secreto obligatorio (el único)
+### Secretos
 
 **Settings → Secrets and variables → Actions → pestaña *Secrets* → New repository secret**
 
-| Nombre | Valor |
-|--------|-------|
-| `GCP_CREDENTIALS` | **El contenido completo del archivo `.json`** descargado en el paso 1, desde la primera `{` hasta la última `}`, sin modificarlo. |
+| Nombre | Obligatorio | Valor |
+|--------|:-----------:|-------|
+| `GCP_CREDENTIALS` | **Sí** | **El contenido completo del archivo `.json`** descargado en el paso 1, desde la primera `{` hasta la última `}`, sin modificarlo. |
+| `DATABASE_URL` | **Sí** | URL de conexión de Neon, tal cual la entrega el proveedor (`postgresql://usuario:clave@host/metrik?sslmode=require`). |
+| `SECRET_KEY` | No | Clave para firmar los tokens (32+ caracteres). Si no se define, el CD **genera una la primera vez** y la reutiliza en los siguientes despliegues. |
+
+En cada despliegue, el CD copia `DATABASE_URL` (y `SECRET_KEY`, si existe) a Secret Manager como
+`metrik-database-url` y `metrik-secret-key`. Solo crea una versión nueva si el valor cambió. Cloud Run lee
+los valores desde ahí, así que no quedan visibles en la configuración del servicio.
 
 Del JSON se obtienen automáticamente el **ID del proyecto** (`project_id`) y la **cuenta de servicio**
 (`client_email`), así que no hay que escribirlos en ningún otro lugar.
@@ -105,8 +101,8 @@ se pueden exigir revisores antes de cada despliegue y limitarlo a la rama `main`
 
 | Variable | Origen |
 |----------|--------|
-| `DATABASE_URL` | Secret Manager `metrik-database-url` |
-| `SECRET_KEY` | Secret Manager `metrik-secret-key` |
+| `DATABASE_URL` | Secreto de GitHub `DATABASE_URL` → Secret Manager `metrik-database-url` |
+| `SECRET_KEY` | Secreto de GitHub `SECRET_KEY` (o generada) → Secret Manager `metrik-secret-key` |
 | `DEBUG` | Fijo `false` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES`, `ALLOWED_ORIGINS` | Variables de GitHub (o su valor por defecto) |
 | `PORT` | Lo inyecta Cloud Run (8080) |
@@ -160,7 +156,8 @@ gcloud run jobs execute metrik-api-migraciones --region <REGION> --args=downgrad
 |----------------------|-------|----------|
 | `Falta el secreto GCP_CREDENTIALS` | No se cargó el secreto | Paso 2: crear `GCP_CREDENTIALS` en la pestaña *Secrets* (no en *Variables*). |
 | `GCP_CREDENTIALS no es una llave JSON … válida` | Se pegó incompleto o es otro tipo de archivo | Pegar el `.json` completo de una **cuenta de servicio** (`"type": "service_account"`). |
-| `No existe el secreto 'metrik-…' en Secret Manager` | Falta el secreto, el nombre no coincide o falta `secretmanager.viewer` | Paso 1.4: revisar los nombres exactos y los roles. |
+| `Falta el secreto DATABASE_URL en GitHub` | No se cargó el secreto | Sección 2: crear `DATABASE_URL` en la pestaña *Secrets*. |
+| `PERMISSION_DENIED` en `gcloud secrets …` | Falta el rol de Secret Manager | Agregar **Administrador de Secret Manager** a la cuenta (paso 1.2). |
 | `PERMISSION_DENIED` en Artifact Registry | Falta `artifactregistry.admin` | Agregar el rol a la cuenta (paso 1.2). |
 | `iam.serviceAccounts.actAs` denegado | Falta `iam.serviceAccountUser` | Agregar el rol a la cuenta (paso 1.2). |
 | `API … has not been used in project` | API sin habilitar | Paso 1.1. |
@@ -172,5 +169,6 @@ gcloud run jobs execute metrik-api-migraciones --region <REGION> --args=downgrad
 **Rotar la llave JSON:** crear una clave nueva en la cuenta de servicio, reemplazar `GCP_CREDENTIALS` en
 GitHub y eliminar la clave anterior en Google Cloud.
 
-**Rotar un secreto de la app:** `gcloud secrets versions add <secreto> --data-file=-` y volver a desplegar
-(*Run workflow*). Como Cloud Run lee `:latest`, la nueva revisión toma el valor nuevo.
+**Cambiar `DATABASE_URL` o `SECRET_KEY`:** actualizar el secreto en GitHub y volver a desplegar
+(*Run workflow*). El CD sube la nueva versión a Secret Manager y la nueva revisión de Cloud Run la usa.
+Cambiar `SECRET_KEY` cierra todas las sesiones abiertas.
