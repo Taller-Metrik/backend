@@ -83,13 +83,19 @@ def moving_average(points: list[Point], window: int) -> list[Point]:
     return out
 
 
-def _merge_and_prune(edges: list[tuple[Vector, int | None]], min_wall_m: float) -> list[tuple[Vector, int | None]]:
+def _merge_and_prune(
+    edges: list[tuple[Vector, int | None]], min_wall_m: float
+) -> tuple[list[tuple[Vector, int | None]], Vector]:
     """Fusiona lados consecutivos con la misma dirección y elimina lados menores a una pared mínima.
 
     Se repite hasta que no haya cambios. El desplazamiento de los lados eliminados se
     compensa después con la corrección de cierre.
+
+    Devuelve también el desplazamiento del origen: si el recorrido empezó a mitad de una pared,
+    el último tramo se une al primero y la primera esquina queda antes del punto de inicio.
     """
     current = list(edges)
+    shift = (0.0, 0.0)
     while True:
         merged: list[tuple[Vector, int | None]] = []
         for vec, d in current:
@@ -102,6 +108,7 @@ def _merge_and_prune(edges: list[tuple[Vector, int | None]], min_wall_m: float) 
             last, d = merged.pop()
             first, _ = merged[0]
             merged[0] = ((last[0] + first[0], last[1] + first[1]), d)
+            shift = (shift[0] - last[0], shift[1] - last[1])  # la 1.ª esquina queda antes del inicio
 
         # Los lados no ortogonales (residuos de esquinas) se eliminan con un umbral mayor
         def weight(i: int) -> float:
@@ -112,7 +119,7 @@ def _merge_and_prune(edges: list[tuple[Vector, int | None]], min_wall_m: float) 
         if len(merged) > 4 and weight(shortest) < min_wall_m:
             merged.pop(shortest)
         if merged == current:
-            return merged
+            return merged, shift
         current = merged
 
 
@@ -262,7 +269,7 @@ def smooth_track(
         else:
             local.append(((dx, dy), None))
 
-    merged = _merge_and_prune(local, min_wall_m)
+    merged, shift = _merge_and_prune(local, min_wall_m)
     if len(merged) < 3:
         raise GeometryError("El recorrido suavizado tiene menos de 3 lados")
 
@@ -278,8 +285,8 @@ def smooth_track(
         for v in vecs
     ]
 
-    # Reconstruir vértices desde el primer punto del recorrido
-    current = (0.0, 0.0)
+    # Reconstruir vértices desde la primera esquina (el comienzo real de la primera pared)
+    current = shift
     local_vertices = [current]
     for v in corrected[:-1]:
         current = (current[0] + v[0], current[1] + v[1])
