@@ -164,3 +164,28 @@ def test_cierre_adaptativo(evidencia):
     assert cuadrado.closed is True and len(cuadrado.vertices) == 4
     assert pasado.closed is True and area_pasado == pytest.approx(20.0, abs=0.1)
     assert hueco.closed is False
+
+
+@pytest.mark.evidencia(
+    id="BU-61",
+    nombre="Plano correcto al empezar a mitad de una pared",
+    requisito="RF-05",
+    objetivo="Verificar que empezar el recorrido a mitad de una pared no deforma el plano: "
+    "el primer y el último tramo forman un solo muro y la primera esquina es su comienzo real.",
+    entrada="Cuarto 6×4 m recorrido desde la mitad del lado de 6 m y desde la mitad del lado de 4 m",
+    esperado="Muros 6, 4, 6, 4 (y 4, 6, 4, 6) y área ≈ 24 m²",
+)
+def test_inicio_a_mitad_de_pared(evidencia):
+    desde_lado_6 = smooth_track(_recorrido([(3, 0), (6, 0), (6, 4), (0, 4), (0, 0), (3, 0)]))
+    desde_lado_4 = smooth_track(_recorrido([(6, 2), (6, 4), (0, 4), (0, 0), (6, 0), (6, 2)]))
+    an6, an4 = analyze(desde_lado_6.vertices), analyze(desde_lado_4.vertices)
+    muros6 = [round(w, 2) for w in an6.wall_lengths_m]
+    muros4 = [round(w, 2) for w in an4.wall_lengths_m]
+    evidencia["obtenido"] = (
+        f"desde lado de 6 m: muros={muros6}, área={an6.area_m2:.2f} m²; "
+        f"desde lado de 4 m: muros={muros4}, área={an4.area_m2:.2f} m²"
+    )
+    assert an6.wall_lengths_m == pytest.approx([6, 4, 6, 4], abs=0.05)
+    assert an4.wall_lengths_m == pytest.approx([4, 6, 4, 6], abs=0.05)
+    assert an6.area_m2 == pytest.approx(24.0, abs=0.2)
+    assert an4.area_m2 == pytest.approx(24.0, abs=0.2)

@@ -13,7 +13,7 @@
 [![Docker](https://img.shields.io/badge/Docker-imagen-2496ED?logo=docker&logoColor=white)](Dockerfile)
 [![Cloud Run](https://img.shields.io/badge/Google_Cloud_Run-producción-4285F4?logo=googlecloud&logoColor=white)](#despliegue)
 [![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI%2FCD-2088FF?logo=githubactions&logoColor=white)](.github/workflows)
-[![Pruebas](https://img.shields.io/badge/pruebas-101_pasando-2EA44F?logo=pytest&logoColor=white)](#pruebas)
+[![Pruebas](https://img.shields.io/badge/pruebas-102_pasando-2EA44F?logo=pytest&logoColor=white)](#pruebas)
 
 [Inicio rápido](#inicio-rapido) ·
 [Arquitectura](#arquitectura) ·
@@ -525,10 +525,10 @@ python scripts/generar_evidencias.py    # captura .png + descripción .txt de ca
 <!-- AUTO-GENERATED: tests/ -->
 | Tipo | Carpeta | Pruebas | Qué cubren |
 |------|---------|--------:|------------|
-| Unitarias | `tests/unit/` | 59 | Algoritmos aislados: geometría, suavizado, GPS, escala, DXF, ML, seguridad |
+| Unitarias | `tests/unit/` | 60 | Algoritmos aislados: geometría, suavizado, GPS, escala, DXF, ML, seguridad |
 | Integración | `tests/integration/` | 34 | Endpoints con base de datos real |
 | Funcionales | `tests/functional/` | 8 | Flujos completos de usuario, del registro al plano DXF |
-| **Total** | | **101** | |
+| **Total** | | **102** | |
 <!-- /AUTO-GENERATED -->
 
 ---
