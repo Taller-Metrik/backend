@@ -5,6 +5,12 @@ venv/
 # Variables de entorno (secretos)
 .env
 
+# Llaves JSON de cuentas de servicio de Google Cloud
+metrik-cicd*.json
+*-credentials.json
+*service-account*.json
+gcp-key*.json
+
 # Python
 __pycache__/
 *.py[cod]
