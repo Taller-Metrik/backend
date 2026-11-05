@@ -48,10 +48,23 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 | Validación | `PUT /surveys/{id}/references`, `GET /surveys/{id}/validation`, `GET /projects/{id}/validation(.csv)` |
 | ML | `GET /ml/info`, `GET /surveys/{id}/ml` |
 
+## Importar mediciones de campo
+
+Carga un volcado `pg_dump` de mediciones reales (lecturas de giroscopio, acelerómetro y GPS).
+El archivo se lee como texto (no se ejecuta su SQL) y cada recorrido se procesa con los algoritmos
+de MetriK. Es idempotente.
+
+```bash
+alembic upgrade head
+python scripts/importar_mediciones.py --archivo C:/Users/<usuario>/Downloads/mediciones_tatiana.sql     --email tatiana@metrik.pe --nombre "Tatiana" --password "<clave de la cuenta nueva>"
+```
+
+Resultados y análisis: [`docs/05-protocolo-validacion.md`](../docs/05-protocolo-validacion.md#8-resultados-con-mediciones-de-campo-reales).
+
 ## Pruebas
 
 ```bash
-pytest                       # 90 pruebas (SQLite en memoria)
+pytest                       # 94 pruebas (SQLite en memoria)
 pytest --cov                 # con cobertura
 set TEST_DATABASE_URL=postgresql+asyncpg://usuario:clave@localhost:5432/metrik_test
 pytest                       # integración contra PostgreSQL real
@@ -60,8 +73,8 @@ python scripts/generar_evidencias.py   # captura .png + descripción .txt por pr
 
 | Tipo | Carpeta | Cantidad |
 |------|---------|----------|
-| Unitarias | `tests/unit/` | 53 |
-| Integración | `tests/integration/` | 29 |
+| Unitarias | `tests/unit/` | 56 |
+| Integración | `tests/integration/` | 30 |
 | Funcionales | `tests/functional/` | 8 |
 
 Evidencias en [`../evidencias/backend/`](../evidencias/backend/README.md).
