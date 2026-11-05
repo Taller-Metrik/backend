@@ -19,7 +19,7 @@ if config.config_file_name is not None:
 # Modelos de MetriK y URL de la base de datos desde la configuración (.env / variables de entorno)
 import app.models  # noqa: E402,F401  (registra todos los modelos)
 from app.core.config import settings  # noqa: E402
-from app.core.database import Base  # noqa: E402
+from app.core.database import Base, engine_options  # noqa: E402
 
 config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 target_metadata = Base.metadata
@@ -71,6 +71,7 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        **engine_options(settings.database_url),
     )
 
     async with connectable.connect() as connection:
