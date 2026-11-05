@@ -53,6 +53,9 @@ class Survey(Base):
 
     # Validación (medida real del área, opcional; las de cada muro van en ReferenceMeasurement)
     real_area_m2: Mapped[float | None] = mapped_column(Float, default=None)
+    real_perimeter_m: Mapped[float | None] = mapped_column(Float, default=None)
+    reference_type: Mapped[str | None] = mapped_column(String(30), default=None)  # cancha | catastro | satelital | tramo_base | rtk
+    reference_vertices: Mapped[list[Any] | None] = mapped_column(JsonType, default=None)  # [{lat, lon}]
 
     # Origen: "app" (medido con MetriK) o "importado" (mediciones de campo importadas)
     source: Mapped[str] = mapped_column(String(20), default="app", server_default=text("'app'"))
