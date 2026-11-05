@@ -53,11 +53,21 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 
 @pytest.fixture
-def evidencia(request: pytest.FixtureRequest) -> dict:
-    """Diccionario donde la prueba anota el resultado obtenido."""
+def evidencia(request: pytest.FixtureRequest):
+    """Diccionario donde la prueba anota el resultado obtenido.
+
+    Al terminar imprime el resumen; con `pytest -rA` aparece en la salida (y en la captura).
+    """
     data: dict = {}
     request.node.evidencia_data = data
-    return data
+    yield data
+    marker = request.node.get_closest_marker("evidencia")
+    if marker is not None:
+        print(f"[{marker.kwargs.get('id')}] {marker.kwargs.get('nombre')}")
+        print(f"  Requisito : {marker.kwargs.get('requisito', '-')}")
+        print(f"  Entrada   : {marker.kwargs.get('entrada', '-')}")
+        print(f"  Esperado  : {marker.kwargs.get('esperado', '-')}")
+        print(f"  Obtenido  : {data.get('obtenido', '-')}")
 
 
 @pytest.hookimpl(wrapper=True)
