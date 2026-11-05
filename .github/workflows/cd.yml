@@ -1,0 +1,124 @@
+name: CD (Google Cloud Run)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-produccion
+  cancel-in-progress: false
+
+env:
+  # Opcionales: si no se definen como variables del repositorio se usan estos valores
+  REGION: ${{ vars.GCP_REGION || 'southamerica-west1' }}
+  SERVICE: ${{ vars.CLOUD_RUN_SERVICE || 'metrik-api' }}
+  GAR_REPOSITORY: ${{ vars.GAR_REPOSITORY || 'metrik' }}
+  # Nombres de los secretos de la app en Google Secret Manager
+  SECRETS: DATABASE_URL=metrik-database-url:latest,SECRET_KEY=metrik-secret-key:latest
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Desplegar en Cloud Run
+    needs: ci
+    runs-on: ubuntu-latest
+    environment:
+      name: produccion
+      url: ${{ steps.deploy.outputs.url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar la llave JSON (secreto GCP_CREDENTIALS)
+        env:
+          GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+        run: |
+          if [ -z "$GCP_CREDENTIALS" ]; then
+            echo "::error::Falta el secreto GCP_CREDENTIALS. Pegue el JSON completo de la cuenta de servicio en Settings → Secrets and variables → Actions → Secrets."
+            exit 1
+          fi
+          if ! echo "$GCP_CREDENTIALS" | jq -e '.type == "service_account" and .project_id and .client_email and .private_key' > /dev/null; then
+            echo "::error::GCP_CREDENTIALS no es una llave JSON de cuenta de servicio válida. Debe pegarse el archivo .json completo, desde { hasta }."
+            exit 1
+          fi
+
+      - name: Autenticación en Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Datos del proyecto (desde el JSON)
+        run: |
+          PROJECT_ID="${{ steps.auth.outputs.project_id }}"
+          SA_EMAIL=$(jq -r .client_email "$GOOGLE_APPLICATION_CREDENTIALS")
+          RUNTIME_SA="${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}"
+          RUNTIME_SA="${RUNTIME_SA:-$SA_EMAIL}"
+          {
+            echo "PROJECT_ID=$PROJECT_ID"
+            echo "RUNTIME_SA=$RUNTIME_SA"
+            echo "IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/$GAR_REPOSITORY/$SERVICE:${{ github.sha }}"
+          } >> "$GITHUB_ENV"
+          echo "Proyecto: $PROJECT_ID · Región: $REGION · Servicio: $SERVICE · Cuenta: $RUNTIME_SA"
+
+      - name: Verificar secretos de la app en Secret Manager
+        run: |
+          for S in metrik-database-url metrik-secret-key; do
+            if ! gcloud secrets describe "$S" --project "$PROJECT_ID" > /dev/null 2>&1; then
+              echo "::error::No existe el secreto '$S' en Secret Manager (o la cuenta no puede verlo). Ver docs/RUNBOOK.md, sección 1."
+              exit 1
+            fi
+          done
+
+      - name: Construir y subir imagen a Artifact Registry
+        run: |
+          gcloud artifacts repositories describe "$GAR_REPOSITORY" --project "$PROJECT_ID" --location "$REGION" > /dev/null 2>&1 \
+            || gcloud artifacts repositories create "$GAR_REPOSITORY" --project "$PROJECT_ID" --location "$REGION" --repository-format docker
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Migraciones (Cloud Run Job)
+        run: |
+          gcloud run jobs deploy "$SERVICE-migraciones" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --image "$IMAGE" \
+            --service-account "$RUNTIME_SA" \
+            --set-secrets "$SECRETS" \
+            --command alembic --args upgrade,head \
+            --max-retries 0 --task-timeout 10m \
+            --execute-now --wait
+
+      - name: Desplegar servicio
+        id: deploy
+        env:
+          ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS || '["*"]' }}
+          ACCESS_TOKEN_EXPIRE_MINUTES: ${{ vars.ACCESS_TOKEN_EXPIRE_MINUTES || '1440' }}
+        run: |
+          cat > env.yaml <<EOF
+          DEBUG: "false"
+          ACCESS_TOKEN_EXPIRE_MINUTES: "$ACCESS_TOKEN_EXPIRE_MINUTES"
+          ALLOWED_ORIGINS: '$ALLOWED_ORIGINS'
+          EOF
+          gcloud run deploy "$SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --image "$IMAGE" \
+            --service-account "$RUNTIME_SA" \
+            --set-secrets "$SECRETS" \
+            --env-vars-file env.yaml \
+            --port 8080 --cpu 1 --memory 1Gi \
+            --min-instances 0 --max-instances 3 \
+            --allow-unauthenticated \
+            --quiet
+          echo "url=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')" >> "$GITHUB_OUTPUT"
+
+      - name: Prueba de humo
+        run: curl -fsS --retry 5 --retry-delay 3 "${{ steps.deploy.outputs.url }}/health"
