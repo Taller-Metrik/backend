@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 from app.core.deps import CurrentUserDep, DbDep
 from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate, SurveyCreate, SurveyOut, SurveySummary
 from app.services.geometry import GeometryError
-from app.services.project_service import NotFoundError, ProjectService, SurveyService, UnsupportedModeError
+from app.services.project_service import NotFoundError, ProjectService, SurveyService
 
 router = APIRouter(tags=["Proyectos y recorridos"])
 
@@ -56,8 +56,6 @@ async def create_survey(project_id: int, payload: SurveyCreate, db: DbDep, user:
         raise _NOT_FOUND from None
     except GeometryError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from None
-    except UnsupportedModeError as exc:
-        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from None
     return SurveyOut.model_validate(survey)
 
 
