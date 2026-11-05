@@ -73,7 +73,7 @@ class SurveyService:
         return survey
 
     def _process(self, payload: SurveyCreate) -> dict:
-        closed, closure_error = True, 0.0
+        closed, closure_error, snapped, total = True, 0.0, 0, 0
         if payload.mode == SurveyMode.INTERIOR:
             smoothed = smooth_track(
                 payload.points,
@@ -83,6 +83,7 @@ class SurveyService:
                 closure_tolerance_m=settings.closure_tolerance_m,
             )
             vertices, closed, closure_error = smoothed.vertices, smoothed.closed, smoothed.closure_error_m
+            snapped, total = smoothed.snapped_edges, smoothed.total_edges
         elif payload.mode == SurveyMode.IMPORTED:
             vertices = geometry.normalize_polygon(payload.corners or [])
         else:
@@ -107,6 +108,9 @@ class SurveyService:
             "is_simple": analysis.is_simple,
             "concave_count": len(analysis.concave_vertices),
             "scale_denominator": denominator,
+            "snapped_edges": snapped,
+            "total_edges": total,
+            "capture": payload.capture.model_dump() if payload.capture else None,
         }
 
     def _process_exterior(self, payload: SurveyCreate) -> list[geometry.Point]:

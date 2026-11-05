@@ -47,6 +47,9 @@ class Survey(Base):
     is_simple: Mapped[bool] = mapped_column(Boolean, default=True)
     concave_count: Mapped[int] = mapped_column(Integer, default=0)
     scale_denominator: Mapped[int] = mapped_column(Integer)
+    snapped_edges: Mapped[int] = mapped_column(Integer, default=0)
+    total_edges: Mapped[int] = mapped_column(Integer, default=0)
+    capture: Mapped[dict[str, Any] | None] = mapped_column(JsonType, default=None)  # odómetro, pérdidas, duración
 
     # Validación (medida real del área, opcional; las de cada muro van en ReferenceMeasurement)
     real_area_m2: Mapped[float | None] = mapped_column(Float, default=None)

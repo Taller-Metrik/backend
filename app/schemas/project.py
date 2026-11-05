@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -34,6 +34,14 @@ class GpsPoint(BaseModel):
     timestamp_s: float | None = None
 
 
+class CaptureIn(BaseModel):
+    """Metadatos de captura enviados por la app (variables del modelo de ML)."""
+
+    odometry: Literal["arcore", "steps"] = "arcore"
+    tracking_loss_s: float = Field(default=0.0, ge=0)
+    duration_s: float | None = Field(default=None, gt=0)
+
+
 class SurveyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     mode: SurveyMode = SurveyMode.INTERIOR
@@ -44,6 +52,7 @@ class SurveyCreate(BaseModel):
     corners: list[Point] | None = Field(default=None, description="Esquinas marcadas (o vértices del plano importado)")
     gps_points: list[GpsPoint] | None = Field(default=None, description="Lecturas GPS (modo exterior)")
     scale_denominator: int | None = Field(default=None, description="Escala del plano; si no se envía se sugiere")
+    capture: CaptureIn | None = Field(default=None, description="Metadatos de captura (modo interior)")
 
     @model_validator(mode="after")
     def check_inputs(self) -> "SurveyCreate":
