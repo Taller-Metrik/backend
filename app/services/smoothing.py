@@ -166,6 +166,36 @@ class SmoothingResult:
     total_edges: int
 
 
+MAX_CLOSURE_TOLERANCE_M = 3.0
+
+
+def path_length(points: list[Point]) -> float:
+    """Longitud recorrida: suma de distancias entre puntos consecutivos."""
+    return sum(euclidean(points[i], points[i + 1]) for i in range(len(points) - 1))
+
+
+def closure_tolerance(path_length_m: float, base_m: float = 1.0) -> float:
+    """Tolerancia de cierre adaptativa: 5 % de lo recorrido, mínimo `base_m`, máximo 3 m.
+
+    La deriva del odómetro crece con la distancia, por lo que una tolerancia fija de 1 m
+    rechaza recorridos largos que sí volvieron al inicio.
+    """
+    return min(max(base_m, 0.05 * path_length_m), max(base_m, MAX_CLOSURE_TOLERANCE_M))
+
+
+def trim_loop(walk: list[Point], tolerance_m: float) -> list[Point]:
+    """Recorta lo caminado después de volver al inicio.
+
+    Busca en el último 40 % del trazo el punto más cercano al inicio; si está dentro de la
+    tolerancia, el recorrido termina ahí (se descarta lo que se pasó del punto de partida).
+    """
+    start = len(walk) - max(1, int(len(walk) * 0.4))
+    best = min(range(start, len(walk)), key=lambda i: euclidean(walk[0], walk[i]))
+    if euclidean(walk[0], walk[best]) <= tolerance_m:
+        return walk[: best + 1]
+    return walk
+
+
 def smooth_track(
     points: list[Point],
     *,
@@ -181,8 +211,10 @@ def smooth_track(
 
     Si se envían `corners` (esquinas marcadas por el usuario) se usan como vértices;
     si no, se obtienen con RDP a partir de `points`.
-    El recorrido se considera cerrado si termina a menos de `closure_tolerance_m` del inicio;
-    si no, el hueco se agrega como un lado más (cierre automático, EX-01) y `closed=False`.
+    El recorrido se considera cerrado si termina cerca del inicio: con esquinas, a menos de
+    `closure_tolerance_m`; con trazo, a menos de la tolerancia adaptativa (`closure_tolerance`),
+    descartando antes lo que se caminó después de volver al inicio (`trim_loop`).
+    Si no, el hueco se agrega como un lado más (cierre automático, EX-01) y `closed=False`.
     """
     source = corners if corners else points
     walk: list[Point] = []
@@ -193,8 +225,13 @@ def smooth_track(
     if len(walk) < 3:
         raise GeometryError("El recorrido necesita al menos 3 puntos distintos")
 
+    # Con esquinas marcadas la tolerancia sigue fija: agrandarla deforma el ambiente
+    tolerance = closure_tolerance_m if corners else closure_tolerance(path_length(walk), closure_tolerance_m)
+    if not corners:
+        walk = trim_loop(walk, tolerance)
+
     simplified = walk if corners else rdp(moving_average(walk, smoothing_window), epsilon)
-    closed = euclidean(simplified[0], simplified[-1]) <= closure_tolerance_m
+    closed = euclidean(simplified[0], simplified[-1]) <= tolerance
     if not closed:
         simplified = [*simplified, simplified[0]]  # cierre automático con el hueco como lado
 
