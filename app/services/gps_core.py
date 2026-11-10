@@ -43,3 +43,11 @@ def to_enu(readings: list[GpsReading], origin: tuple[float, float] | None = None
         )
         for r in readings
     ]
+
+
+def from_enu(point: Point, origin: tuple[float, float]) -> tuple[float, float]:
+    """Inversa de `to_enu`: punto local (x este, y norte, en m) → (lat, lon) en grados."""
+    lat0, lon0 = origin
+    lat = lat0 + math.degrees(point[1] / EARTH_RADIUS_M)
+    lon = lon0 + math.degrees(point[0] / (EARTH_RADIUS_M * math.cos(math.radians(lat0))))
+    return lat, lon
