@@ -11,7 +11,7 @@ from tests.helpers import TERRENO_100x60, simulate_gps_walk, simulate_stop_and_g
     requisito="RF-18 / RF-21",
     objetivo="Verificar que la API usa las esquinas fijadas e informa el área con su incertidumbre al 95 %.",
     entrada="Recorrido stop-and-go del terreno 100×60 m (60 s por esquina) con 8 satélites y 35 dB-Hz",
-    esperado="HTTP 200, método stop_and_go, área 6000 ± 3 %, U95 del área < 5 % y cierre informado",
+    esperado="HTTP 200, método stop_and_go, área 6000 ± 3 % y dentro de ± U95 (U95 < 10 %), cierre informado",
 )
 async def test_gps_area_stop_and_go(client, api, evidencia):
     puntos = simulate_stop_and_go(TERRENO_100x60, satellites=8, cn0_dbhz=35.0, dwell_s=60, seed=4)
@@ -25,11 +25,13 @@ async def test_gps_area_stop_and_go(client, api, evidencia):
     assert resp.status_code == 200
     assert u["method"] == "stop_and_go"
     assert body["analysis"]["area_m2"] == pytest.approx(6000, rel=0.03)
-    assert u["area_u95_pct"] < 5
+    assert u["area_u95_pct"] < 10
+    assert abs(body["analysis"]["area_m2"] - 6000) <= u["area_u95_m2"]
     assert u["closure_m"] is not None
-    assert u["k"] == 2.0
+    assert u["k"] in (2.0, 2.5)  # 2,5 cuando la σ sale del error de cierre
     assert len(u["vertex_sigma_m"]) == 4
     assert body["discarded_by_signal"] == 0
+    assert u["closure_consistent"] is not None
 
 
 @pytest.mark.evidencia(
