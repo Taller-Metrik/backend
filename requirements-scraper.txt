@@ -1,0 +1,3 @@
+# Dependencias del job diario de precios (scripts/actualizar_precios.py), no del API.
+# Scrapling con fetchers HTTP; trae playwright/patchright, por eso va aparte de requirements.txt.
+scrapling[fetchers]==0.5.1
