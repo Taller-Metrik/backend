@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.schemas.geometry import PolygonAnalysisOut
 from app.schemas.gps import GpsAreaIn, GpsAreaOut, GpsErrorIn, GpsErrorOut, HaversineIn, HaversineOut, LatLon
+from app.schemas.project import UncertaintyOut
 from app.services import geometry, gps, scale
 
 router = APIRouter(prefix="/gps", tags=["GPS (modo exterior)"])
@@ -35,7 +36,7 @@ async def gps_error(payload: GpsErrorIn) -> GpsErrorOut:
 
 @router.post("/area", response_model=GpsAreaOut)
 async def gps_area(payload: GpsAreaIn) -> GpsAreaOut:
-    """Área y perímetro de un terreno recorrido con GPS (RF-08)."""
+    """Área y perímetro de un terreno recorrido con GPS, con su incertidumbre al 95 % (RF-08, RF-18 a RF-21)."""
     try:
         scale.validate_scale(payload.scale_denominator)
         poly = gps.gps_polygon(
@@ -51,8 +52,10 @@ async def gps_area(payload: GpsAreaIn) -> GpsAreaOut:
         origin=LatLon(lat=poly.origin[0], lon=poly.origin[1]),
         used_readings=poly.used_readings,
         discarded_readings=poly.discarded_readings,
+        discarded_by_signal=poly.discarded_by_signal,
         scale=f"1:{payload.scale_denominator}",
         analysis=PolygonAnalysisOut(**asdict(analysis)),
+        uncertainty=UncertaintyOut(**gps.uncertainty_report(poly)),
     )
 
 

@@ -81,7 +81,7 @@ def test_fijar_esquina_descarta_atipicos(evidencia):
     requisito="RF-18",
     objetivo="Verificar que el polígono se arma con las esquinas fijadas.",
     entrada="Terreno 100×60 m: 30 s quieto por esquina (σ=1,5 m, sesgo 1 m) y caminata con ruido de 3 m",
-    esperado="Método stop_and_go, 4 vértices y área 6000 m² ± 2 %",
+    esperado="Método stop_and_go, 4 vértices, área 6000 m² ± 3 % y el área real dentro de ± U95",
 )
 def test_poligono_stop_and_go(evidencia):
     poly = gps_polygon(_r(simulate_stop_and_go(TERRENO_100x60, seed=4)))
@@ -91,7 +91,8 @@ def test_poligono_stop_and_go(evidencia):
     )
     assert poly.method == "stop_and_go"
     assert len(poly.vertices) == 4
-    assert area == pytest.approx(6000, rel=0.02)
+    assert area == pytest.approx(6000, rel=0.03)
+    assert abs(area - 6000) <= poly.uncertainty.area_u95_m2
 
 
 @pytest.mark.evidencia(

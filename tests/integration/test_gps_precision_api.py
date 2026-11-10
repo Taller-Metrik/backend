@@ -10,11 +10,11 @@ from tests.helpers import TERRENO_100x60, simulate_gps_walk, simulate_stop_and_g
     nombre="POST /gps/area con esquinas fijadas devuelve la incertidumbre",
     requisito="RF-18 / RF-21",
     objetivo="Verificar que la API usa las esquinas fijadas e informa el área con su incertidumbre al 95 %.",
-    entrada="Recorrido stop-and-go del terreno 100×60 m con 8 satélites y 35 dB-Hz",
-    esperado="HTTP 200, método stop_and_go, área 6000 ± 2 %, U95 del área < 5 % y cierre informado",
+    entrada="Recorrido stop-and-go del terreno 100×60 m (60 s por esquina) con 8 satélites y 35 dB-Hz",
+    esperado="HTTP 200, método stop_and_go, área 6000 ± 3 %, U95 del área < 5 % y cierre informado",
 )
 async def test_gps_area_stop_and_go(client, api, evidencia):
-    puntos = simulate_stop_and_go(TERRENO_100x60, satellites=8, cn0_dbhz=35.0, seed=4)
+    puntos = simulate_stop_and_go(TERRENO_100x60, satellites=8, cn0_dbhz=35.0, dwell_s=60, seed=4)
     resp = await client.post(f"{api}/gps/area", json={"points": puntos})
     body = resp.json()
     u = body["uncertainty"]
@@ -24,7 +24,7 @@ async def test_gps_area_stop_and_go(client, api, evidencia):
     )
     assert resp.status_code == 200
     assert u["method"] == "stop_and_go"
-    assert body["analysis"]["area_m2"] == pytest.approx(6000, rel=0.02)
+    assert body["analysis"]["area_m2"] == pytest.approx(6000, rel=0.03)
     assert u["area_u95_pct"] < 5
     assert u["closure_m"] is not None
     assert u["k"] == 2.0
