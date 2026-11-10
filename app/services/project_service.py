@@ -113,10 +113,17 @@ class SurveyService:
             "scale_denominator": denominator,
             "snapped_edges": snapped,
             "total_edges": total,
-            "capture": payload.capture.model_dump() if payload.capture
-            else ({"transport": payload.transport} if payload.mode == SurveyMode.EXTERIOR else None),
+            "capture": self._capture(payload),
             "uncertainty": uncertainty,
         }
+
+    @staticmethod
+    def _capture(payload: SurveyCreate) -> dict | None:
+        """Metadatos de captura. En exterior siempre se guarda el transporte (lo usan el informe y la validación)."""
+        capture = payload.capture.model_dump() if payload.capture else None
+        if payload.mode == SurveyMode.EXTERIOR:
+            capture = {**(capture or {}), "transport": payload.transport}
+        return capture
 
     def _process_exterior(self, payload: SurveyCreate) -> GpsPolygon:
         readings = [GpsReading(**g.model_dump()) for g in payload.gps_points or []]

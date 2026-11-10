@@ -13,7 +13,7 @@ from typing import Any
 from reportlab.graphics.shapes import Drawing, Line, Polygon, String
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
@@ -58,6 +58,16 @@ class ReportData:
     validation: ReportValidation | None
     origin_latlon: tuple[float, float] | None
     vertices_latlon: list[tuple[float, float]] | None
+    generated_at: datetime | None = None  # fecha del informe; por defecto, ahora
+
+
+_U95_KEYS = ("area_u95_m2", "area_u95_pct", "perimeter_u95_m")
+
+
+def _u95(d: "ReportData") -> dict[str, Any] | None:
+    """Incertidumbre utilizable: recorridos antiguos pueden no tenerla o tenerla incompleta."""
+    u = d.uncertainty
+    return u if u and all(isinstance(u.get(k), int | float) for k in _U95_KEYS) else None
 
 
 @dataclass
@@ -95,7 +105,7 @@ def _method(d: ReportData) -> str:
 
 
 def _results(d: ReportData) -> list[tuple[str, str]]:
-    u = d.uncertainty
+    u = _u95(d)
     if u:
         area = f"{_n(d.area_m2)} ± {_n(u['area_u95_m2'])} m² ({_n(u['area_u95_pct'], 1)} %)"
         perimeter = f"{_n(d.perimeter_m)} ± {_n(u['perimeter_u95_m'])} m"
@@ -142,9 +152,10 @@ def _memoria(d: ReportData) -> str:
     kind = {"interior": "El ambiente", "exterior": "El terreno", "imported": "El plano"}.get(d.mode, "El recorrido")
     text = (f"{kind} «{d.survey_name}» del proyecto «{d.project_name}» se representa como un polígono de "
             f"{len(d.vertices)} lados, con un área de {_n(d.area_m2)} m² y un perímetro de {_n(d.perimeter_m)} m.")
-    if d.uncertainty:
-        text += (f" Con un 95 % de confianza, el área real está entre {_n(d.area_m2 - d.uncertainty['area_u95_m2'])} "
-                 f"y {_n(d.area_m2 + d.uncertainty['area_u95_m2'])} m².")
+    u = _u95(d)
+    if u:
+        text += (f" Con un 95 % de confianza, el área real está entre {_n(d.area_m2 - u['area_u95_m2'])} "
+                 f"y {_n(d.area_m2 + u['area_u95_m2'])} m².")
     return text
 
 
@@ -156,7 +167,7 @@ def report_sections(d: ReportData) -> list[Section]:
         ("Tipo de medición", MODE_LABELS.get(d.mode, d.mode)),
         ("Dispositivo", d.device_model or "no informado"),
         ("Fecha de medición", d.created_at.strftime("%d/%m/%Y %H:%M")),
-        ("Fecha del informe", datetime.now(UTC).strftime("%d/%m/%Y")),
+        ("Fecha del informe", (d.generated_at or datetime.now(UTC)).strftime("%d/%m/%Y")),
     ])
     sections = [
         general,
@@ -185,8 +196,13 @@ def report_sections(d: ReportData) -> list[Section]:
 
 
 def _plain(text: str) -> str:
-    """Las fuentes estándar del PDF (WinAnsi) no tienen ≤ ni ≥."""
-    return text.replace("≤", "<=").replace("≥", ">=")
+    """Texto que las fuentes estándar del PDF (codificación WinAnsi/cp1252) pueden dibujar.
+
+    ≤ y ≥ se escriben como <= y >=; cualquier otro carácter fuera de cp1252 (emojis, alfabetos no
+    latinos) se reemplaza por "?" en lugar de salir como un cuadro negro.
+    """
+    text = text.replace("≤", "<=").replace("≥", ">=")
+    return text.encode("cp1252", errors="replace").decode("cp1252")
 
 
 def _pdf_text(text: str) -> str:
@@ -231,6 +247,8 @@ def _plan_drawing(vertices: list[Point], lengths: list[float], width: float = 16
 def render_pdf(d: ReportData) -> bytes:
     """Dibuja el informe en un PDF A4 (sin compresión de páginas: el texto queda buscable)."""
     styles = getSampleStyleSheet()
+    cell = ParagraphStyle("celda", parent=styles["BodyText"], fontSize=9, leading=11)
+    label = ParagraphStyle("etiqueta", parent=cell, textColor=colors.Color(0.25, 0.25, 0.25))
     out = io.BytesIO()
     doc = SimpleDocTemplate(
         out, pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm, topMargin=1.8 * cm, bottomMargin=1.8 * cm,
@@ -247,10 +265,12 @@ def render_pdf(d: ReportData) -> bytes:
         if s.drawing and len(d.vertices) >= 3:
             story.append(_plan_drawing(d.vertices, d.wall_lengths_m))
         if s.rows:
-            table = Table([[_plain(k), _plain(v)] for k, v in s.rows], colWidths=[6 * cm, 11 * cm])
+            # Celdas como Paragraph para que los textos largos hagan salto de línea
+            table = Table(
+                [[Paragraph(_pdf_text(k), label), Paragraph(_pdf_text(v), cell)] for k, v in s.rows],
+                colWidths=[6 * cm, 11 * cm],
+            )
             table.setStyle(TableStyle([
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("TEXTCOLOR", (0, 0), (0, -1), colors.Color(0.25, 0.25, 0.25)),
                 ("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.lightgrey),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ]))

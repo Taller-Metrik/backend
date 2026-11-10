@@ -347,4 +347,6 @@ def uncertainty_report(poly: GpsPolygon) -> dict:
         "vertex_sigma_m": poly.vertex_sigmas_m,
         "closure_m": poly.closure_m,
         "closure_consistent": poly.closure_consistent,
+        # Origen de las coordenadas locales de los vértices: permite convertirlos a lat/lon sin recalcular
+        "origin_latlon": list(poly.origin),
     }
