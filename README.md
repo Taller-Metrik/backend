@@ -581,6 +581,7 @@ backend/
 ├── scripts/           importación de mediciones y generación de evidencias
 ├── tests/             unit · integration · functional
 ├── docs/RUNBOOK.md    configuración de GCP, despliegue, monitoreo y rollback
+├── docs/casos-de-uso.md  casos de uso CU-01..CU-10 y requisitos RF-18..RF-28
 ├── .github/workflows/ ci.yml · cd.yml
 └── Dockerfile         imagen de producción (Cloud Run)
 ```
