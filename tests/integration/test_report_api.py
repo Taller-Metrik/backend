@@ -75,3 +75,32 @@ async def test_informe_inexistente(auth_client, api, evidencia):
     resp = await auth_client.get(f"{api}/surveys/9999/report.pdf")
     evidencia["obtenido"] = f"HTTP {resp.status_code}"
     assert resp.status_code == 404
+
+
+@pytest.mark.evidencia(
+    id="BI-41",
+    nombre="El recorrido exterior guarda el transporte y el origen GPS",
+    requisito="RF-28",
+    objetivo="Verificar que el transporte se guarda aunque la app envíe 'capture' y que se guarda el origen de las coordenadas.",
+    precondiciones="Usuario autenticado con un proyecto",
+    entrada="POST /projects/{id}/surveys exterior en carro con 'capture'; luego GET /surveys/{id}",
+    esperado="capture.transport = car y uncertainty.origin_latlon con [lat, lon]",
+)
+async def test_guarda_transporte_y_origen(auth_client, project, api, db_session, evidencia):
+    from app.models.survey import Survey
+
+    creado = await auth_client.post(
+        f"{api}/projects/{project['id']}/surveys",
+        json={
+            "name": "Fundo", "mode": "exterior", "transport": "car",
+            "capture": {"odometry": "steps", "tracking_loss_s": 0, "duration_s": 600},
+            "gps_points": simulate_stop_and_go(TERRENO_100x60, seed=6),
+        },
+    )
+    sid = creado.json()["id"]
+    leido = (await auth_client.get(f"{api}/surveys/{sid}")).json()
+    guardado = await db_session.get(Survey, sid)
+    evidencia["obtenido"] = f"HTTP {creado.status_code}, capture={guardado.capture}, origen={leido['uncertainty']['origin_latlon']}"
+    assert creado.status_code == 201
+    assert guardado.capture["transport"] == "car"
+    assert len(leido["uncertainty"]["origin_latlon"]) == 2
