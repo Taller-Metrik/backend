@@ -19,7 +19,8 @@ def _item(takeoff, key):
     requisito="RF-27",
     objetivo="Verificar postes, pies de amigo, alambre en rollos y grapas con las reglas de obra (postes cada 3 m, refuerzo cada 50 m).",
     entrada="Terreno 100×60 m, 4 esquinas, sin portones, 4 hilos, sin incertidumbre",
-    esperado="100 postes de línea + 4 de refuerzo + 4 esquineros = 108; 16 pies de amigo; 1344 m de alambre = 7 rollos; 476 grapas",
+    esperado=("100 postes de línea + 4 de refuerzo + 4 esquineros = 108; 16 pies de amigo; 1344 m de alambre = 7 rollos; "
+              "476 grapas; hoyos para 108 postes + 16 pies de amigo = 6,70 m³"),
 )
 def test_cerco_alambre(evidencia):
     t = fence_takeoff(TERRENO, FenceParams(kind="wire"))
@@ -34,6 +35,7 @@ def test_cerco_alambre(evidencia):
     assert resumen["wire_m"] == pytest.approx(1344)
     assert resumen["wire_rolls"] == 7
     assert resumen["staples"] == 476
+    assert _item(t, "excavation_m3").quantity == pytest.approx(124 * 0.054, abs=0.01)
 
 
 @pytest.mark.evidencia(
@@ -62,8 +64,9 @@ def test_porton_alambre(evidencia):
     nombre="Metrado de muro de ladrillo",
     requisito="RF-27",
     objetivo="Verificar columnas, muro, ladrillos, mortero y concreto de un cerco de albañilería.",
-    entrada="Terreno 10×10 m, altura 2,40 m, columnas cada 3 m, sin portones",
-    esperado="16 columnas; muro (40 − 16×0,25) × 2,20 = 79,2 m²; 3244 ladrillos; cimiento 11,2 m³; eliminación 14 m³",
+    entrada="Terreno 10×10 m, altura 2,40 m desde el terreno, columnas cada 3 m, sin portones",
+    esperado=("16 columnas; muro (40 − 16×0,25) × (2,40 − 0,20 solera − 0,10 sobrecimiento) = 75,6 m²; "
+              "3096 ladrillos; cimiento 11,2 m³; eliminación 14 m³"),
 )
 def test_muro_ladrillo(evidencia):
     t = fence_takeoff([10.0, 10.0, 10.0, 10.0], FenceParams(kind="brick"))
@@ -72,8 +75,8 @@ def test_muro_ladrillo(evidencia):
         f"ladrillos={_item(t, 'bricks').quantity}, cimiento={_item(t, 'footing_m3').quantity} m³"
     )
     assert _item(t, "columns").quantity == 16
-    assert _item(t, "wall_m2").quantity == pytest.approx(79.2)
-    assert _item(t, "bricks").quantity == 3244
+    assert _item(t, "wall_m2").quantity == pytest.approx(75.6)
+    assert _item(t, "bricks").quantity == 3096
     assert _item(t, "footing_m3").quantity == pytest.approx(11.2)
     assert _item(t, "disposal_m3").quantity == pytest.approx(14.0)
 
@@ -141,3 +144,65 @@ def test_presupuesto(evidencia):
     assert b.igv == pytest.approx(1359.58)
     assert b.total == pytest.approx(8912.78)
     assert b.missing_prices == ["staples"]
+
+
+@pytest.mark.evidencia(
+    id="BU-86",
+    nombre="Incertidumbre mayor que el perímetro",
+    requisito="RF-27",
+    objetivo="Verificar que una U95 enorme no produce cantidades negativas y que el reporte lo advierte.",
+    entrada="Terreno 100×60 m (P = 320 m) con U95 = 400 m y un portón de 4 m",
+    esperado="Todas las cantidades mínimas ≥ 0 y la nota 'vuelva a medir'",
+)
+def test_incertidumbre_enorme(evidencia):
+    t = fence_takeoff(TERRENO, FenceParams(kind="brick"), gates=[Gate(0, 4.0)], perimeter_u95_m=400)
+    negativos = [i.key for i in t.items if i.min < 0]
+    evidencia["obtenido"] = f"mínimos negativos={negativos}, notas={t.notes[1]}"
+    assert not negativos
+    assert any("vuelva a medir" in n for n in t.notes)
+
+
+@pytest.mark.evidencia(
+    id="BU-87",
+    nombre="Terreno con un lado de longitud cero",
+    requisito="RF-27 / EX-05",
+    objetivo="Verificar que un lado nulo se rechaza en lugar de dividir por cero.",
+    entrada="Lados [0, 0, 0] y [10, 0, 10]",
+    esperado="GeometryError en ambos casos",
+)
+def test_lado_cero(evidencia):
+    for lados in ([0.0, 0.0, 0.0], [10.0, 0.0, 10.0]):
+        with pytest.raises(GeometryError):
+            fence_takeoff(lados, FenceParams(kind="wire"))
+    evidencia["obtenido"] = "GeometryError en ambos casos"
+
+
+@pytest.mark.evidencia(
+    id="BU-88",
+    nombre="Precio para una partida informativa",
+    requisito="RF-24",
+    objetivo="Verificar que no se puede presupuestar un desglose que ya está en otra partida (evita contar dos veces).",
+    entrada="Cerco de alambre; precio para posts_line (desglose de posts_total)",
+    esperado="GeometryError que menciona que la partida es informativa",
+)
+def test_precio_informativo(evidencia):
+    t = fence_takeoff(TERRENO, FenceParams(kind="wire"))
+    with pytest.raises(GeometryError) as e:
+        build_budget(t.items, {"posts_line": 20})
+    evidencia["obtenido"] = str(e.value)
+    assert "informativas" in str(e.value)
+
+
+@pytest.mark.evidencia(
+    id="BU-89",
+    nombre="Columnas reforzadas del portón en muro de ladrillo",
+    requisito="RF-27",
+    objetivo="Verificar que el portón lleva 2 columnas de 0,25 × 0,25 m aparte de las columnas de confinamiento.",
+    entrada="Terreno 10×10 m con un portón de 4 m en el lado 1",
+    esperado="2 columnas de portón y 13 de confinamiento (4 esquinas + 9 intermedias; el lado del portón queda en tramos de 3 m)",
+)
+def test_columnas_porton(evidencia):
+    t = fence_takeoff([10.0, 10.0, 10.0, 10.0], FenceParams(kind="brick"), gates=[Gate(0, 4.0)])
+    evidencia["obtenido"] = f"portón={_item(t, 'columns_gate').quantity}, confinamiento={_item(t, 'columns').quantity}"
+    assert _item(t, "columns_gate").quantity == 2
+    assert _item(t, "columns").quantity == 13
