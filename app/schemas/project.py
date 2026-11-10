@@ -59,6 +59,9 @@ class UncertaintyOut(BaseModel):
     closure_consistent: bool | None = Field(
         default=None, description="False si el cierre es mayor de lo esperable: conviene volver a medir"
     )
+    origin_latlon: list[float] | None = Field(
+        default=None, description="[lat, lon] del origen de las coordenadas locales (x este, y norte) de los vértices"
+    )
 
 
 class CaptureIn(BaseModel):
