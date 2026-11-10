@@ -29,16 +29,17 @@ async def survey_fence(survey_id: int, payload: FenceIn, db: DbDep, user: Curren
         column_spacing_m=payload.column_spacing_m,
     )
     u95 = (survey.uncertainty or {}).get("perimeter_u95_m")
+    valid_u95 = isinstance(u95, int | float) and not isinstance(u95, bool)
     try:
         takeoff = fence_takeoff(
             [float(w) for w in survey.wall_lengths_m],
             params,
             gates=[Gate(g.side, g.width_m) for g in payload.gates],
-            perimeter_u95_m=float(u95) if isinstance(u95, int | float) else None,
+            perimeter_u95_m=float(u95) if valid_u95 else None,
         )
         budget = (
             build_budget(takeoff.items, payload.prices, overhead_pct=payload.overhead_pct, profit_pct=payload.profit_pct)
-            if payload.prices
+            if payload.prices is not None
             else None
         )
     except GeometryError as exc:

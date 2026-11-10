@@ -19,6 +19,7 @@ class PricedItem(Protocol):
     description: str
     unit: str
     purchase: float
+    priceable: bool  # False = desglose informativo: no se presupuesta (evita contar dos veces)
 
 
 @dataclass(frozen=True)
@@ -64,13 +65,17 @@ def build_budget(
     igv_pct: float = IGV_PCT,
 ) -> Budget:
     """Presupuesto con la cantidad a comprar de cada partida × su precio unitario."""
-    keys = {i.key for i in items}
-    unknown = sorted(set(prices) - keys)
-    if unknown:
-        raise GeometryError(f"Hay precios para partidas que no existen en el metrado: {', '.join(unknown)}")
+    priceable = [i for i in items if i.priceable]
+    keys = {i.key for i in priceable}
+    invalid = sorted(set(prices) - keys)
+    if invalid:
+        informative = {i.key for i in items if not i.priceable}
+        detail = ", ".join(k for k in invalid[:5])
+        reason = "son informativas" if set(invalid) <= informative else "no existen o son informativas"
+        raise GeometryError(f"Hay precios para partidas que {reason} en el metrado: {detail}")
     lines: list[BudgetLine] = []
     direct = Decimal(0)
-    for item in items:
+    for item in priceable:
         if item.key not in prices:
             continue
         price = Decimal(str(prices[item.key]))
@@ -91,5 +96,5 @@ def build_budget(
         igv_pct=igv_pct,
         igv=float(igv),
         total=float(subtotal + igv),
-        missing_prices=[i.key for i in items if i.key not in prices],
+        missing_prices=[i.key for i in priceable if i.key not in prices],
     )

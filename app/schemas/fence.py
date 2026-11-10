@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 Price = Annotated[float, Field(ge=0, le=1_000_000)]
+PriceKey = Annotated[str, Field(min_length=1, max_length=40)]
 
 
 class GateIn(BaseModel):
@@ -19,8 +20,9 @@ class FenceIn(BaseModel):
     strands: int = Field(default=4, ge=1, le=10, description="Hilos de alambre")
     wall_height_m: float = Field(default=2.40, ge=1.0, le=4.0, description="Altura del muro (ladrillo)")
     column_spacing_m: float = Field(default=3.0, ge=2.0, le=4.5, description="Separación de columnas (ladrillo)")
-    prices: dict[str, Price] | None = Field(
-        default=None, description="Precio unitario (S/) por clave de partida; sin precios no se arma presupuesto"
+    prices: dict[PriceKey, Price] | None = Field(
+        default=None, max_length=40,
+        description="Precio unitario (S/) por clave de partida presupuestable; sin precios no se arma presupuesto",
     )
     overhead_pct: float = Field(default=10.0, ge=0, le=50, description="Gastos generales (%)")
     profit_pct: float = Field(default=5.0, ge=0, le=50, description="Utilidad (%)")
@@ -34,6 +36,7 @@ class TakeoffItemOut(BaseModel):
     min: float
     max: float
     purchase: float
+    priceable: bool = Field(description="False = desglose informativo, no entra al presupuesto")
 
 
 class BudgetLineOut(BaseModel):
