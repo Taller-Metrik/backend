@@ -5,10 +5,12 @@ Ver docs/03-algoritmos.md, sección 5.
 
 import math
 import statistics
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
+from typing import Literal
 
 from app.services.geometry import GeometryError, Point
 from app.services.smoothing import rdp
+from app.services.uncertainty import PolygonUncertainty, polygon_uncertainty
 
 EARTH_RADIUS_M = 6_371_000.0
 
@@ -38,6 +40,9 @@ class GpsReading:
     lon: float
     accuracy_m: float = 5.0
     timestamp_s: float | None = None
+    satellites: int | None = None  # satélites usados en la solución (GnssStatus)
+    cn0_dbhz: float | None = None  # relación portadora/ruido media de esos satélites
+    vertex_id: int | None = None  # esquina sobre la que el usuario está quieto (stop-and-go)
 
 
 def haversine(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -266,7 +271,30 @@ class GpsPolygon:
     vertices: list[Point]
     origin: tuple[float, float]
     used_readings: int
-    discarded_readings: int
+    discarded_readings: int  # total descartado (precisión, señal y saltos)
+    method: Literal["stop_and_go", "continuous"] = "continuous"
+    vertex_sigmas_m: list[float] = field(default_factory=list)  # σ por eje de cada vértice
+    closure_m: float | None = None  # error de cierre al volver a fijar la primera esquina (RF-19)
+    discarded_by_signal: int = 0
+    uncertainty: PolygonUncertainty | None = None
+
+
+def _continuous_vertices(
+    valid: list[GpsReading], simplify_epsilon_m: float, use_kalman: bool, process_noise: float
+) -> tuple[list[Point], list[Point]]:
+    """Recorrido continuo: Kalman/RTS → RDP → reajuste de vértices por rectas. Devuelve (vértices, trazo crudo)."""
+    raw = to_enu(valid)
+    xy = raw
+    if use_kalman and all(r.timestamp_s is not None for r in valid):
+        xy = kalman_smooth(raw, [r.timestamp_s for r in valid], [r.accuracy_m for r in valid], process_noise)  # type: ignore[misc]
+    vertices = rdp(xy, simplify_epsilon_m) if len(xy) > 3 else xy
+    if len(vertices) > 3 and math.hypot(vertices[0][0] - vertices[-1][0], vertices[0][1] - vertices[-1][1]) < max(
+        simplify_epsilon_m, 1.0
+    ):
+        vertices = vertices[:-1]
+    if len(vertices) >= 3:
+        vertices = refine_vertices_by_lines(vertices, xy, exclude_radius_m=simplify_epsilon_m)
+    return vertices, raw
 
 
 def gps_polygon(
@@ -277,35 +305,66 @@ def gps_polygon(
     use_kalman: bool = True,
     transport: str = "walk",
 ) -> GpsPolygon:
-    """Convierte el recorrido GPS de un área en un polígono métrico (para área y perímetro).
+    """Convierte el recorrido GPS de un área en un polígono métrico con su incertidumbre (RF-08, RF-18 a RF-21).
 
-    Si no se indica `simplify_epsilon_m`, se usa 2 × la precisión mediana de las lecturas:
-    el ruido residual genera un zigzag que infla el perímetro (el área es mucho más robusta).
+    - Si el recorrido trae al menos 3 esquinas fijadas (`vertex_id`), los vértices son esas esquinas
+      promediadas (método stop-and-go, ver `gps_precision`).
+    - Si no, se usa el recorrido continuo; si no se indica `simplify_epsilon_m`, se usa 2 × la precisión
+      mediana: el ruido residual genera un zigzag que infla el perímetro (el área es mucho más robusta).
     """
+    # Importación diferida: gps_precision depende de este módulo (GpsReading, to_enu)
+    from app.services.gps_precision import (
+        filter_by_signal,
+        has_fixed_vertices,
+        stop_and_go_vertices,
+        track_residual_sigma,
+    )
+
     profile = TRANSPORT_PROFILES.get(transport, TRANSPORT_PROFILES["walk"])
     max_accuracy_m = max_accuracy_m if max_accuracy_m is not None else profile.max_accuracy_m
     valid, discarded = filter_by_accuracy(readings, max_accuracy_m)
+    valid, by_signal = filter_by_signal(valid)
     valid, jumps = filter_speed_jumps(valid, profile.max_speed_mps)
-    discarded += jumps
+    discarded += by_signal + jumps
     if len(valid) < 3:
         raise GeometryError(
-            f"Solo {len(valid)} lecturas con precisión ≤ {max_accuracy_m} m; se necesitan al menos 3 (EX-04)"
+            f"Solo {len(valid)} lecturas con precisión ≤ {max_accuracy_m} m y señal suficiente; "
+            "se necesitan al menos 3 (EX-04)"
         )
-    if simplify_epsilon_m is None:
-        simplify_epsilon_m = max(1.0, 2 * statistics.median(r.accuracy_m for r in valid))
-    xy = to_enu(valid)
-    if use_kalman and all(r.timestamp_s is not None for r in valid):
-        xy = kalman_smooth(xy, [r.timestamp_s for r in valid], [r.accuracy_m for r in valid], profile.process_noise)  # type: ignore[misc]
-    vertices = rdp(xy, simplify_epsilon_m) if len(xy) > 3 else xy
-    if len(vertices) > 3 and math.hypot(vertices[0][0] - vertices[-1][0], vertices[0][1] - vertices[-1][1]) < max(
-        simplify_epsilon_m, 1.0
-    ):
-        vertices = vertices[:-1]
-    if len(vertices) >= 3:
-        vertices = refine_vertices_by_lines(vertices, xy, exclude_radius_m=simplify_epsilon_m)
+    origin = (valid[0].lat, valid[0].lon)
+
+    closure_m: float | None = None
+    if has_fixed_vertices(valid):
+        method: Literal["stop_and_go", "continuous"] = "stop_and_go"
+        fixed = stop_and_go_vertices(valid, origin)
+        vertices, sigmas, closure_m = fixed.vertices, fixed.sigmas_m, fixed.closure_m
+    else:
+        method = "continuous"
+        if simplify_epsilon_m is None:
+            simplify_epsilon_m = max(1.0, 2 * statistics.median(r.accuracy_m for r in valid))
+        vertices, raw = _continuous_vertices(valid, simplify_epsilon_m, use_kalman, profile.process_noise)
+        sigmas = [track_residual_sigma(raw, vertices, exclude_radius_m=simplify_epsilon_m)] * len(vertices)
+
     return GpsPolygon(
         vertices=vertices,
-        origin=(valid[0].lat, valid[0].lon),
+        origin=origin,
         used_readings=len(valid),
         discarded_readings=discarded,
+        method=method,
+        vertex_sigmas_m=sigmas,
+        closure_m=closure_m,
+        discarded_by_signal=by_signal,
+        uncertainty=polygon_uncertainty(vertices, sigmas) if len(vertices) >= 3 else None,
     )
+
+
+def uncertainty_report(poly: GpsPolygon) -> dict | None:
+    """Incertidumbre del polígono GPS lista para la API y la base de datos."""
+    if poly.uncertainty is None:
+        return None
+    return {
+        "method": poly.method,
+        **asdict(poly.uncertainty),
+        "vertex_sigma_m": poly.vertex_sigmas_m,
+        "closure_m": poly.closure_m,
+    }

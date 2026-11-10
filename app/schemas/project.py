@@ -32,6 +32,26 @@ class GpsPoint(BaseModel):
     lon: float = Field(ge=-180, le=180)
     accuracy_m: float = Field(default=5.0, ge=0)
     timestamp_s: float | None = None
+    satellites: int | None = Field(default=None, ge=0, le=200, description="Satélites usados en la solución (RF-20)")
+    cn0_dbhz: float | None = Field(default=None, ge=0, le=70, description="C/N0 medio de esos satélites, dB-Hz (RF-20)")
+    vertex_id: int | None = Field(
+        default=None, ge=0, le=10_000, description="Esquina sobre la que el usuario está quieto (stop-and-go, RF-18)"
+    )
+
+
+class UncertaintyOut(BaseModel):
+    """Incertidumbre del área y del perímetro al 95 % (RF-21)."""
+
+    method: Literal["stop_and_go", "continuous"]
+    area_sigma_m2: float
+    area_u95_m2: float
+    area_u95_pct: float
+    perimeter_sigma_m: float
+    perimeter_u95_m: float
+    perimeter_u95_pct: float
+    k: float = Field(description="Factor de cobertura (2 ≈ 95 %)")
+    vertex_sigma_m: list[float] = Field(description="σ por eje de cada vértice")
+    closure_m: float | None = Field(description="Error de cierre al volver a fijar la primera esquina (RF-19)")
 
 
 class CaptureIn(BaseModel):
@@ -94,3 +114,4 @@ class SurveyOut(SurveySummary):
     closure_error_m: float
     is_simple: bool
     concave_count: int
+    uncertainty: UncertaintyOut | None = Field(default=None, description="Solo en recorridos exteriores (GPS)")

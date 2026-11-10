@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 from app.schemas.geometry import PolygonAnalysisOut
-from app.schemas.project import GpsPoint
+from app.schemas.project import GpsPoint, UncertaintyOut
 
 
 class LatLon(BaseModel):
@@ -41,8 +41,10 @@ class GpsAreaOut(BaseModel):
     origin: LatLon
     used_readings: int
     discarded_readings: int
+    discarded_by_signal: int = Field(description="Lecturas descartadas por pocos satélites o señal débil (RF-20)")
     scale: str
     analysis: PolygonAnalysisOut
+    uncertainty: UncertaintyOut
 
 
 class HaversineIn(BaseModel):

@@ -9,7 +9,7 @@ from app.models.survey import Survey, SurveyMode
 from app.models.user import User
 from app.schemas.project import ProjectCreate, ProjectUpdate, SurveyCreate
 from app.services import geometry, scale
-from app.services.gps import GpsReading, gps_polygon
+from app.services.gps import GpsPolygon, GpsReading, gps_polygon, uncertainty_report
 from app.services.smoothing import smooth_track
 
 
@@ -74,6 +74,7 @@ class SurveyService:
 
     def _process(self, payload: SurveyCreate) -> dict:
         closed, closure_error, snapped, total = True, 0.0, 0, 0
+        uncertainty: dict | None = None
         if payload.mode == SurveyMode.INTERIOR:
             smoothed = smooth_track(
                 payload.points,
@@ -87,7 +88,9 @@ class SurveyService:
         elif payload.mode == SurveyMode.IMPORTED:
             vertices = geometry.normalize_polygon(payload.corners or [])
         else:
-            vertices = self._process_exterior(payload)
+            poly = self._process_exterior(payload)
+            vertices, uncertainty = poly.vertices, uncertainty_report(poly)
+            closure_error = poly.closure_m or 0.0
 
         analysis = geometry.analyze(vertices)
         xs, ys = [v[0] for v in analysis.vertices], [v[1] for v in analysis.vertices]
@@ -112,11 +115,12 @@ class SurveyService:
             "total_edges": total,
             "capture": payload.capture.model_dump() if payload.capture
             else ({"transport": payload.transport} if payload.mode == SurveyMode.EXTERIOR else None),
+            "uncertainty": uncertainty,
         }
 
-    def _process_exterior(self, payload: SurveyCreate) -> list[geometry.Point]:
+    def _process_exterior(self, payload: SurveyCreate) -> GpsPolygon:
         readings = [GpsReading(**g.model_dump()) for g in payload.gps_points or []]
-        return gps_polygon(readings, transport=payload.transport).vertices
+        return gps_polygon(readings, transport=payload.transport)
 
     async def list(self, project_id: int) -> list[Survey]:
         await self.projects.get(project_id)

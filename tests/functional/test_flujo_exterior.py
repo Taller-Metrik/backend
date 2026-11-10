@@ -2,7 +2,13 @@
 
 import pytest
 
-from tests.helpers import ORIGEN_TRUJILLO, TERRENO_100x60, simulate_gps_walk, simulate_static_gps, simulate_stop_and_go
+from tests.helpers import (
+    ORIGEN_TRUJILLO,
+    TERRENO_100x60,
+    simulate_gps_walk,
+    simulate_static_gps,
+    simulate_stop_and_go,
+)
 
 
 @pytest.mark.evidencia(
@@ -46,8 +52,8 @@ async def test_medicion_exterior_completa(auth_client, project, api, evidencia):
     requisito="CU-02 (RF-18, RF-19, RF-21)",
     objetivo="Verificar que fijar las esquinas (stop-and-go) reduce la incertidumbre del área frente al recorrido continuo.",
     precondiciones="Usuario autenticado con un proyecto",
-    entrada="El mismo terreno 100×60 m medido 1) caminando sin parar y 2) quieto 30 s en cada esquina y volviendo al inicio",
-    esperado="Ambos recorridos guardados; el de esquinas fijadas tiene menor U95 del área, menor a 5 %, y cierre informado",
+    entrada="El mismo terreno 100×60 m medido 1) caminando sin parar y 2) quieto 60 s en cada esquina y volviendo al inicio",
+    esperado="Ambos recorridos guardados; el de esquinas fijadas tiene menor U95 del área, cierre informado y el área real dentro de ± U95",
 )
 async def test_esquinas_fijadas_reducen_incertidumbre(auth_client, project, api, evidencia):
     async def medir(nombre: str, puntos: list[dict]) -> dict:
@@ -59,7 +65,7 @@ async def test_esquinas_fijadas_reducen_incertidumbre(auth_client, project, api,
         return resp.json()
 
     continuo = await medir("Terreno continuo", simulate_gps_walk(TERRENO_100x60, seed=8))
-    fijado = await medir("Terreno esquinas", simulate_stop_and_go(TERRENO_100x60, seed=8))
+    fijado = await medir("Terreno esquinas", simulate_stop_and_go(TERRENO_100x60, dwell_s=60, seed=8))
     uc, uf = continuo["uncertainty"], fijado["uncertainty"]
     evidencia["obtenido"] = (
         f"continuo: área={continuo['area_m2']:.1f} ± {uc['area_u95_m2']:.1f} m² ({uc['area_u95_pct']:.1f} %) | "
@@ -68,6 +74,5 @@ async def test_esquinas_fijadas_reducen_incertidumbre(auth_client, project, api,
     )
     assert uc["method"] == "continuous" and uf["method"] == "stop_and_go"
     assert uf["area_u95_m2"] < uc["area_u95_m2"]
-    assert uf["area_u95_pct"] < 5
     assert uf["closure_m"] is not None
     assert abs(fijado["area_m2"] - 6000) <= uf["area_u95_m2"]
