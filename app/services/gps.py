@@ -5,14 +5,27 @@ Ver docs/03-algoritmos.md, sección 5.
 
 import math
 import statistics
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from typing import Literal
 
 from app.services.geometry import GeometryError, Point
+from app.services.gps_core import EARTH_RADIUS_M, GpsReading, haversine, to_enu
+from app.services.gps_precision import (
+    filter_by_signal,
+    has_fixed_vertices,
+    stop_and_go_vertices,
+    track_residual_sigma,
+)
 from app.services.smoothing import rdp
-from app.services.uncertainty import PolygonUncertainty, polygon_uncertainty
+from app.services.uncertainty import (
+    CLOSURE_COVERAGE_FACTOR,
+    COVERAGE_FACTOR,
+    PolygonUncertainty,
+    polygon_uncertainty,
+)
 
-EARTH_RADIUS_M = 6_371_000.0
+# Se reexportan para no romper los imports existentes (`from app.services.gps import GpsReading`, …)
+__all__ = ["EARTH_RADIUS_M", "GpsReading", "haversine", "to_enu"]
 
 
 @dataclass(frozen=True)
@@ -32,39 +45,6 @@ TRANSPORT_PROFILES: dict[str, TransportProfile] = {
     "moto": TransportProfile("Moto", max_speed_mps=30.0, max_accuracy_m=15.0, process_noise=3.0, min_interval_s=0.5),
     "car": TransportProfile("Carro", max_speed_mps=40.0, max_accuracy_m=15.0, process_noise=4.0, min_interval_s=0.5),
 }
-
-
-@dataclass(frozen=True)
-class GpsReading:
-    lat: float
-    lon: float
-    accuracy_m: float = 5.0
-    timestamp_s: float | None = None
-    satellites: int | None = None  # satélites usados en la solución (GnssStatus)
-    cn0_dbhz: float | None = None  # relación portadora/ruido media de esos satélites
-    vertex_id: int | None = None  # esquina sobre la que el usuario está quieto (stop-and-go)
-
-
-def haversine(a: tuple[float, float], b: tuple[float, float]) -> float:
-    """Distancia geodésica (m) entre dos coordenadas (lat, lon) en grados."""
-    lat1, lon1, lat2, lon2 = map(math.radians, (a[0], a[1], b[0], b[1]))
-    h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
-    return 2 * EARTH_RADIUS_M * math.asin(math.sqrt(h))
-
-
-def to_enu(readings: list[GpsReading], origin: tuple[float, float] | None = None) -> list[Point]:
-    """Proyección equirrectangular local: (lat, lon) → (x este, y norte) en metros."""
-    if not readings:
-        return []
-    lat0, lon0 = origin if origin else (readings[0].lat, readings[0].lon)
-    cos_lat0 = math.cos(math.radians(lat0))
-    return [
-        (
-            EARTH_RADIUS_M * math.radians(r.lon - lon0) * cos_lat0,
-            EARTH_RADIUS_M * math.radians(r.lat - lat0),
-        )
-        for r in readings
-    ]
 
 
 def filter_by_accuracy(readings: list[GpsReading], max_accuracy_m: float) -> tuple[list[GpsReading], int]:
@@ -272,11 +252,12 @@ class GpsPolygon:
     origin: tuple[float, float]
     used_readings: int
     discarded_readings: int  # total descartado (precisión, señal y saltos)
-    method: Literal["stop_and_go", "continuous"] = "continuous"
-    vertex_sigmas_m: list[float] = field(default_factory=list)  # σ por eje de cada vértice
-    closure_m: float | None = None  # error de cierre al volver a fijar la primera esquina (RF-19)
-    discarded_by_signal: int = 0
-    uncertainty: PolygonUncertainty | None = None
+    method: Literal["stop_and_go", "continuous"]
+    vertex_sigmas_m: list[float]  # σ por eje de cada vértice
+    closure_m: float | None  # error de cierre al volver a fijar la primera esquina (RF-19)
+    closure_consistent: bool | None  # False si el cierre es mayor de lo que permite la σ declarada
+    discarded_by_signal: int
+    uncertainty: PolygonUncertainty
 
 
 def _continuous_vertices(
@@ -312,14 +293,6 @@ def gps_polygon(
     - Si no, se usa el recorrido continuo; si no se indica `simplify_epsilon_m`, se usa 2 × la precisión
       mediana: el ruido residual genera un zigzag que infla el perímetro (el área es mucho más robusta).
     """
-    # Importación diferida: gps_precision depende de este módulo (GpsReading, to_enu)
-    from app.services.gps_precision import (
-        filter_by_signal,
-        has_fixed_vertices,
-        stop_and_go_vertices,
-        track_residual_sigma,
-    )
-
     profile = TRANSPORT_PROFILES.get(transport, TRANSPORT_PROFILES["walk"])
     max_accuracy_m = max_accuracy_m if max_accuracy_m is not None else profile.max_accuracy_m
     valid, discarded = filter_by_accuracy(readings, max_accuracy_m)
@@ -334,15 +307,22 @@ def gps_polygon(
     origin = (valid[0].lat, valid[0].lon)
 
     closure_m: float | None = None
+    closure_consistent: bool | None = None
+    k = COVERAGE_FACTOR
     if has_fixed_vertices(valid):
         method: Literal["stop_and_go", "continuous"] = "stop_and_go"
         fixed = stop_and_go_vertices(valid, origin)
-        vertices, sigmas, closure_m = fixed.vertices, fixed.sigmas_m, fixed.closure_m
+        vertices, sigmas = fixed.vertices, fixed.sigmas_m
+        closure_m, closure_consistent = fixed.closure_m, fixed.closure_consistent
+        if fixed.closure_dominated:
+            k = CLOSURE_COVERAGE_FACTOR
     else:
         method = "continuous"
         if simplify_epsilon_m is None:
             simplify_epsilon_m = max(1.0, 2 * statistics.median(r.accuracy_m for r in valid))
         vertices, raw = _continuous_vertices(valid, simplify_epsilon_m, use_kalman, profile.process_noise)
+        if len(vertices) < 3:
+            raise GeometryError("El recorrido no forma un polígono: quedan menos de 3 vértices (EX-05)")
         sigmas = [track_residual_sigma(raw, vertices, exclude_radius_m=simplify_epsilon_m)] * len(vertices)
 
     return GpsPolygon(
@@ -353,18 +333,18 @@ def gps_polygon(
         method=method,
         vertex_sigmas_m=sigmas,
         closure_m=closure_m,
+        closure_consistent=closure_consistent,
         discarded_by_signal=by_signal,
-        uncertainty=polygon_uncertainty(vertices, sigmas) if len(vertices) >= 3 else None,
+        uncertainty=polygon_uncertainty(vertices, sigmas, k=k),
     )
 
 
-def uncertainty_report(poly: GpsPolygon) -> dict | None:
+def uncertainty_report(poly: GpsPolygon) -> dict:
     """Incertidumbre del polígono GPS lista para la API y la base de datos."""
-    if poly.uncertainty is None:
-        return None
     return {
         "method": poly.method,
         **asdict(poly.uncertainty),
         "vertex_sigma_m": poly.vertex_sigmas_m,
         "closure_m": poly.closure_m,
+        "closure_consistent": poly.closure_consistent,
     }

@@ -32,8 +32,12 @@ class GpsPoint(BaseModel):
     lon: float = Field(ge=-180, le=180)
     accuracy_m: float = Field(default=5.0, ge=0)
     timestamp_s: float | None = None
-    satellites: int | None = Field(default=None, ge=0, le=200, description="Satélites usados en la solución (RF-20)")
-    cn0_dbhz: float | None = Field(default=None, ge=0, le=70, description="C/N0 medio de esos satélites, dB-Hz (RF-20)")
+    satellites: int | None = Field(
+        default=None, ge=0, le=200, description="Satélites usados en la solución (usedInFix), no los visibles (RF-20)"
+    )
+    cn0_dbhz: float | None = Field(
+        default=None, ge=0, le=70, description="C/N0 medio de los 4 satélites usados más fuertes, dB-Hz (RF-20)"
+    )
     vertex_id: int | None = Field(
         default=None, ge=0, le=10_000, description="Esquina sobre la que el usuario está quieto (stop-and-go, RF-18)"
     )
@@ -49,9 +53,12 @@ class UncertaintyOut(BaseModel):
     perimeter_sigma_m: float
     perimeter_u95_m: float
     perimeter_u95_pct: float
-    k: float = Field(description="Factor de cobertura (2 ≈ 95 %)")
+    k: float = Field(description="Factor de cobertura: 2 (≈ 95 %); 2,5 si la σ salió solo del error de cierre")
     vertex_sigma_m: list[float] = Field(description="σ por eje de cada vértice")
     closure_m: float | None = Field(description="Error de cierre al volver a fijar la primera esquina (RF-19)")
+    closure_consistent: bool | None = Field(
+        default=None, description="False si el cierre es mayor de lo esperable: conviene volver a medir"
+    )
 
 
 class CaptureIn(BaseModel):

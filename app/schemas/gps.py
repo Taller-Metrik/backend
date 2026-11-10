@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.schemas.geometry import PolygonAnalysisOut
@@ -35,6 +37,7 @@ class GpsAreaIn(BaseModel):
     simplify_epsilon_m: float | None = Field(default=None, gt=0, description="Por defecto 2 × precisión mediana")
     use_kalman: bool = True
     scale_denominator: int = Field(default=500)
+    transport: Literal["walk", "bike", "moto", "car"] = Field(default="walk", description="Cómo se recorrió el terreno")
 
 
 class GpsAreaOut(BaseModel):
