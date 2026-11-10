@@ -88,9 +88,9 @@ class SurveyService:
         elif payload.mode == SurveyMode.IMPORTED:
             vertices = geometry.normalize_polygon(payload.corners or [])
         else:
+            # El cierre GPS va solo dentro de `uncertainty`: `closure_error_m` es una variable del modelo de ML
             poly = self._process_exterior(payload)
             vertices, uncertainty = poly.vertices, uncertainty_report(poly)
-            closure_error = poly.closure_m or 0.0
 
         analysis = geometry.analyze(vertices)
         xs, ys = [v[0] for v in analysis.vertices], [v[1] for v in analysis.vertices]

@@ -207,3 +207,39 @@ def test_poligono_descarta_por_senal(evidencia):
         gps_polygon(_r(simulate_stop_and_go(TERRENO_100x60, satellites=4, seed=1)))
     evidencia["obtenido"] = str(exc.value)
     assert "EX-04" in str(exc.value)
+
+
+@pytest.mark.evidencia(
+    id="BU-71",
+    nombre="Cierre incoherente con la σ declarada",
+    requisito="RF-19 / RF-21",
+    objetivo="Verificar que un cierre mayor al percentil 95 esperado se marca como no creíble y amplía k a 2,5.",
+    entrada="Stop-and-go sin sesgo, σ=0,3 m, primera esquina vuelta a fijar 4 m al este",
+    esperado="closure_consistent = False, σ ≥ 4/√π ≈ 2,26 m y k = 2,5",
+)
+def test_cierre_incoherente(evidencia):
+    lecturas = _r(simulate_stop_and_go(TERRENO_100x60, sigma_m=0.3, bias_m=0.0, closure_offset_m=4.0, seed=2))
+    poly = gps_polygon(lecturas)
+    evidencia["obtenido"] = (
+        f"cierre={poly.closure_m:.2f} m, coherente={poly.closure_consistent}, "
+        f"σ mín={min(poly.vertex_sigmas_m):.2f} m, k={poly.uncertainty.k}"
+    )
+    assert poly.closure_consistent is False
+    assert min(poly.vertex_sigmas_m) >= 4.0 / math.sqrt(math.pi) - 0.15
+    assert poly.uncertainty.k == 2.5
+
+
+@pytest.mark.evidencia(
+    id="BU-72",
+    nombre="Error que no se reduce al promediar",
+    requisito="RF-18",
+    objetivo="Verificar que una esquina medida mucho tiempo nunca baja de σ_b = 0,5 m (multitrayecto, ionosfera).",
+    entrada="300 lecturas quietas (5 minutos) con σ=0,3 m",
+    esperado="σ del vértice ≥ 0,5 m",
+)
+def test_piso_no_promediable(evidencia):
+    rng = random.Random(9)
+    pts = [(rng.gauss(0, 0.3), rng.gauss(0, 0.3)) for _ in range(300)]
+    fix = fix_vertex(pts, [0.3] * 300, duration_s=300)
+    evidencia["obtenido"] = f"σ={fix.sigma_m:.3f} m"
+    assert fix.sigma_m >= 0.5

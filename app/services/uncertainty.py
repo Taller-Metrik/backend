@@ -26,6 +26,9 @@ from dataclasses import dataclass
 from app.services.geometry import GeometryError, Point, segment_lengths, signed_area
 
 COVERAGE_FACTOR = 2.0  # k = 2 → nivel de confianza ≈ 95 %
+# Si la σ sale de una sola muestra (el error de cierre), su propia estimación es incierta:
+# se amplía k para mantener la cobertura del 95 %.
+CLOSURE_COVERAGE_FACTOR = 2.5
 
 
 @dataclass(frozen=True)
@@ -61,7 +64,7 @@ def _check(vertices: list[Point], sigmas_m: list[float]) -> None:
 
 
 def _pct(u: float, value: float) -> float:
-    return 100 * u / value if value > 0 else math.inf
+    return 100 * u / value
 
 
 def polygon_uncertainty(
@@ -79,6 +82,8 @@ def polygon_uncertainty(
         var_perimeter += s2 * ((u_in[0] - u_out[0]) ** 2 + (u_in[1] - u_out[1]) ** 2)
     sa, sp = math.sqrt(var_area), math.sqrt(var_perimeter)
     area, perimeter = _area(vertices), _perimeter(vertices)
+    if area <= 0 or perimeter <= 0:
+        raise GeometryError("El polígono no tiene área: no se puede estimar la incertidumbre relativa (EX-05)")
     return PolygonUncertainty(
         area_sigma_m2=sa,
         area_u95_m2=k * sa,

@@ -44,6 +44,7 @@ async def gps_area(payload: GpsAreaIn) -> GpsAreaOut:
             max_accuracy_m=payload.max_accuracy_m,
             simplify_epsilon_m=payload.simplify_epsilon_m,
             use_kalman=payload.use_kalman,
+            transport=payload.transport,
         )
         analysis = geometry.analyze(poly.vertices)
     except geometry.GeometryError as exc:
