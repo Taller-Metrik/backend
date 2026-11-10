@@ -50,6 +50,8 @@ class Survey(Base):
     snapped_edges: Mapped[int] = mapped_column(Integer, default=0)
     total_edges: Mapped[int] = mapped_column(Integer, default=0)
     capture: Mapped[dict[str, Any] | None] = mapped_column(JsonType, default=None)  # odómetro, pérdidas, duración
+    # Incertidumbre del área y perímetro al 95 % (RF-21); solo recorridos exteriores
+    uncertainty: Mapped[dict[str, Any] | None] = mapped_column(JsonType, default=None)
 
     # Validación (medida real del área, opcional; las de cada muro van en ReferenceMeasurement)
     real_area_m2: Mapped[float | None] = mapped_column(Float, default=None)
