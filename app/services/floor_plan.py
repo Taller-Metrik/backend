@@ -81,22 +81,16 @@ def _outward_normal(a: list[Point], i: int) -> Point:
 
 def place_room(a_world: list[Point], a_wall: int, b_local: list[Point], b_wall: int, thickness_m: float) -> list[Point]:
     """Ubica B pegado al muro `a_wall` de A, del lado de afuera y a `thickness_m` de distancia."""
-    (p1, p2), (q1, q2) = _wall(a_world, a_wall), _wall(b_local, b_wall)
-    angle_a = math.atan2(p2[1] - p1[1], p2[0] - p1[0])
-    angle_b = math.atan2(q2[1] - q1[1], q2[0] - q1[0])
     n = _outward_normal(a_world, a_wall)
-    mid_a = _mid(p1, p2)
+    nb = _outward_normal(b_local, b_wall)
+    mid_a = _mid(*_wall(a_world, a_wall))
     target = (mid_a[0] + n[0] * thickness_m, mid_a[1] + n[1] * thickness_m)
-    # Normalmente el muro de B queda en sentido opuesto al de A; si B se midió en sentido horario, en el mismo.
-    placed: list[Point] = []
-    for theta in (angle_a + math.pi - angle_b, angle_a - angle_b):
-        rotated = _transform(b_local, theta, 0, 0)
-        mid_b = _mid(*_wall(rotated, b_wall))
-        placed = _transform(rotated, 0, target[0] - mid_b[0], target[1] - mid_b[1])
-        cx, cy = _centroid(placed)
-        if (cx - mid_a[0]) * n[0] + (cy - mid_a[1]) * n[1] > 0:  # B queda del lado de afuera de A
-            return placed
-    return placed
+    # Se gira B hasta que la normal de afuera de su muro apunte hacia A (opuesta a la de A). Se usa la normal y
+    # no el centroide porque en un ambiente cóncavo el centroide puede caer del otro lado del muro.
+    theta = math.atan2(-n[1], -n[0]) - math.atan2(nb[1], nb[0])
+    rotated = _transform(b_local, theta, 0, 0)
+    mid_b = _mid(*_wall(rotated, b_wall))
+    return _transform(rotated, 0, target[0] - mid_b[0], target[1] - mid_b[1])
 
 
 def _inside(p: Point, poly: list[Point]) -> bool:
