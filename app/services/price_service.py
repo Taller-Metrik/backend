@@ -1,15 +1,23 @@
 """Precios efectivos para un usuario: el suyo si lo escribió; si no, el de la tienda (RF-23)."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.price import MaterialPrice, UserPrice
 from app.models.user import User
 from app.services.price_catalog import CATALOG, CATALOG_BY_KEY, STORE
 from app.services.project_service import NotFoundError
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    """SQLite devuelve fechas sin zona horaria; PostgreSQL con zona. Se entregan siempre en UTC."""
+    if value is None:
+        return None
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 @dataclass(frozen=True)
@@ -53,21 +61,26 @@ class PriceService:
             views.append(PriceView(
                 c.key, c.description, c.unit, c.content, c.content_unit, price, source, store_price,
                 STORE if c.slug else None, s.product_name if s else None, s.url if s else None,
-                s.fetched_at if s else None, s.status if s else None,
+                _utc(s.fetched_at) if s else None, s.status if s else None,
             ))
         return views
 
     async def set_own(self, key: str, price: float) -> PriceView:
         if key not in CATALOG_BY_KEY:
             raise NotFoundError
-        row = (
-            await self.db.execute(select(UserPrice).where(UserPrice.user_id == self.user.id, UserPrice.key == key))
-        ).scalar_one_or_none()
-        if row is None:
-            self.db.add(UserPrice(user_id=self.user.id, key=key, price=price))
-        else:
-            row.price = price
-        await self.db.commit()
+        for _ in range(2):  # si otro PUT simultáneo creó la fila, el segundo intento la actualiza
+            row = (
+                await self.db.execute(select(UserPrice).where(UserPrice.user_id == self.user.id, UserPrice.key == key))
+            ).scalar_one_or_none()
+            if row is None:
+                self.db.add(UserPrice(user_id=self.user.id, key=key, price=price))
+            else:
+                row.price = price
+            try:
+                await self.db.commit()
+                break
+            except IntegrityError:
+                await self.db.rollback()
         return next(v for v in await self.list() if v.key == key)
 
     async def delete_own(self, key: str) -> None:

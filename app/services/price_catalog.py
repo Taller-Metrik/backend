@@ -9,6 +9,7 @@
 """
 
 import asyncio
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.price import MaterialPrice
 
 STORE = "Promart"
+MAX_PRICE = 1_000_000.0  # tope de cordura (la columna admite hasta 99 999 999,99)
 STORE_API = "https://www.promart.pe/api/catalog_system/pub/products/search/{slug}/p"
 
 
@@ -71,13 +73,15 @@ def parse_vtex_product(data: Any) -> ScrapedPrice:
         product = data[0]
         offer = product["items"][0]["sellers"][0]["commertialOffer"]
         price = float(offer["Price"])
-        name = str(product["productName"])
+        name = str(product["productName"])[:200]  # tamaño de la columna
         url = str(product.get("link") or "")
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise PriceParseError(f"Respuesta de la tienda con formato inesperado ({type(exc).__name__})") from exc
-    if price <= 0:
-        raise PriceParseError("El producto no tiene precio publicado")
-    return ScrapedPrice(name, round(price, 2), int(offer.get("AvailableQuantity") or 0) > 0, url)
+    if not math.isfinite(price) or not 0 < price < MAX_PRICE:
+        raise PriceParseError("El producto no tiene un precio publicado válido")
+    # Solo se guardan enlaces seguros y que entren en la columna
+    safe_url = url if url.startswith("https://") and len(url) <= 300 else ""
+    return ScrapedPrice(name, round(price, 2), int(offer.get("AvailableQuantity") or 0) > 0, safe_url)
 
 
 @dataclass
@@ -93,27 +97,44 @@ async def refresh_prices(
     *,
     delay_s: float = 2.0,
 ) -> RefreshReport:
-    """Actualiza el precio de cada material con producto en la tienda. `fetch(url)` devuelve el JSON."""
+    """Actualiza el precio de cada material con producto en la tienda. `fetch(url)` devuelve el JSON.
+
+    Cada material se guarda en su propia transacción: un fallo (de la tienda o de la base de datos) no hace
+    perder las actualizaciones de los demás.
+    """
     report = RefreshReport()
     for i, entry in enumerate(c for c in CATALOG if c.slug):
         if i and delay_s:
             await asyncio.sleep(delay_s)  # una consulta cada pocos segundos: tráfico mínimo para la tienda
-        now = datetime.now(UTC)
-        row = await db.get(MaterialPrice, entry.key)
-        if row is None:
-            row = MaterialPrice(key=entry.key, store=STORE)
-            db.add(row)
-        row.checked_at = now
         try:
-            data = await asyncio.to_thread(fetch, product_url(entry.slug))  # type: ignore[arg-type]
-            scraped = parse_vtex_product(data)
+            scraped: ScrapedPrice | Exception = parse_vtex_product(
+                await asyncio.to_thread(fetch, product_url(entry.slug))  # type: ignore[arg-type]
+            )
         except Exception as exc:  # noqa: BLE001 - cualquier fallo de la tienda se registra y se sigue
-            row.status, row.error = "error", f"{type(exc).__name__}: {exc}"[:200]
+            scraped = exc
+        try:
+            await _save(db, entry.key, scraped)
+        except Exception as exc:  # noqa: BLE001 - un fallo al guardar no detiene a los demás materiales
+            await db.rollback()
+            scraped = exc
+        if isinstance(scraped, Exception):
             report.failed += 1
-            report.errors[entry.key] = row.error
-            continue
-        row.product_name, row.url, row.price = scraped.product_name, scraped.url, scraped.price
-        row.available, row.fetched_at, row.status, row.error = scraped.available, now, "ok", None
-        report.updated += 1
-    await db.commit()
+            report.errors[entry.key] = f"{type(scraped).__name__}: {scraped}"[:200]
+        else:
+            report.updated += 1
     return report
+
+
+async def _save(db: AsyncSession, key: str, scraped: "ScrapedPrice | Exception") -> None:
+    now = datetime.now(UTC)
+    row = await db.get(MaterialPrice, key)
+    if row is None:
+        row = MaterialPrice(key=key, store=STORE)
+        db.add(row)
+    row.checked_at = now
+    if isinstance(scraped, Exception):
+        row.status, row.error = "error", f"{type(scraped).__name__}: {scraped}"[:200]  # se conserva el último precio
+    else:
+        row.product_name, row.url, row.price = scraped.product_name, scraped.url or None, scraped.price
+        row.available, row.fetched_at, row.status, row.error = scraped.available, now, "ok", None
+    await db.commit()

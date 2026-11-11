@@ -64,3 +64,26 @@ def test_catalogo(evidencia):
         "https://www.promart.pe/api/catalog_system/pub/products/search/cemento-portland-tipo-i-x42-5kg-sol/p"
     )
     assert {"cement_bag", "paint_gallon", "porcelain_box", "brick_kk18", "barbed_wire_roll"} <= set(claves)
+
+
+@pytest.mark.evidencia(
+    id="BU-96",
+    nombre="Datos extraños de la tienda",
+    requisito="RF-23",
+    objetivo="Verificar que un nombre muy largo se recorta, un precio NaN o infinito se rechaza y un enlace no HTTPS no se guarda.",
+    entrada="Nombre de 500 caracteres; Price = NaN e Infinity; enlace http://",
+    esperado="Nombre de 200 caracteres; PriceParseError para NaN e Infinity; enlace vacío",
+)
+def test_datos_extranos(evidencia):
+    largo = json.loads(json.dumps(FIXTURE))
+    largo[0]["productName"] = "x" * 500
+    largo[0]["link"] = "http://www.promart.pe/producto/p"
+    p = parse_vtex_product(largo)
+    for valor in (float("nan"), float("inf")):
+        malo = json.loads(json.dumps(FIXTURE))
+        malo[0]["items"][0]["sellers"][0]["commertialOffer"]["Price"] = valor
+        with pytest.raises(PriceParseError):
+            parse_vtex_product(malo)
+    evidencia["obtenido"] = f"nombre={len(p.product_name)} caracteres, enlace='{p.url}'"
+    assert len(p.product_name) == 200
+    assert p.url == ""
