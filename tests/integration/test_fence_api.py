@@ -131,3 +131,31 @@ async def test_cerco_con_catalogo(auth_client, project, api, db_session, evidenc
     assert body["price_sources"]["posts_total"] == "store"
     assert own_lines["posts_total"] == 25 and own_lines["braces"] == 8.0
     assert own["price_sources"]["posts_total"] == "input"
+
+
+@pytest.mark.evidencia(
+    id="BI-54",
+    nombre="Cerco de ladrillo presupuestado con los materiales de la tienda",
+    requisito="RF-23 / RF-24 / RF-27",
+    objetivo=(
+        "Verificar que el muro, los concretos, el cimiento, el sobrecimiento y el acero del cerco de ladrillo se "
+        "presupuestan con los materiales del catálogo (ladrillo, cemento, arena, piedra y fierro de Promart)."
+    ),
+    precondiciones="Usuario autenticado con un terreno medido; catálogo actualizado (todos los productos a S/ 8)",
+    entrada="Cerco de ladrillo de 2,40 m sin precios escritos",
+    esperado=(
+        "Muro = 39 × 1,05 ladrillos + 0,025 m³ de mortero 1:4 por m²; concretos, cimiento, sobrecimiento y acero "
+        "con precio de la tienda; encofrado y excavación quedan sin precio"
+    ),
+)
+async def test_cerco_ladrillo_con_catalogo(auth_client, project, api, db_session, evidencia):
+    await refresh_prices(db_session, _store, delay_s=0)
+    sid = await _terreno(auth_client, project, api)
+    body = (await auth_client.post(f"{api}/surveys/{sid}/fence", json={"kind": "brick"})).json()
+    lines = {line["key"]: line["unit_price"] for line in body["budget"]["lines"]}
+    evidencia["obtenido"] = f"precios={lines}, sin precio={body['budget']['missing_prices']}"
+    mortar = 0.025 * (8.9 * 42.5 * 8 / 42.5 + 1600 * 8 / 40)  # cemento + arena gruesa del mortero 1:4
+    assert lines["wall_m2"] == pytest.approx(39 * 1.05 * 8 + mortar, abs=0.01)
+    assert {"columns_concrete_m3", "beam_concrete_m3", "footing_m3", "plinth_m3", "steel_kg"} <= set(lines)
+    assert {"formwork_m2", "excavation_m3"} <= set(body["budget"]["missing_prices"])
+    assert body["price_sources"]["wall_m2"] == "store"
