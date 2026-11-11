@@ -50,7 +50,8 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry("pine_post", "Madera pino 1\" × 2\" × 3,2 m (postes y pies de amigo)", "und", 1.0, "und",
                  "madera-pino-radiata-1-x2-x10-5--gc"),
     CatalogEntry("staples_bag", "Grapas Motto 1\" × 9 para cerco", "bolsa", 0.5, "kg", "grapa-motto-1--x-9---1-2-kg"),
-    CatalogEntry("tile_adhesive_bag", "Pegamento para porcelanato", "bolsa", 25.0, "kg", None),
+    CatalogEntry("tile_adhesive_bag", "Pegamento extrafuerte para porcelanato", "bolsa", 25.0, "kg",
+                 "pegamento-en-polvo-blanco-extra-fuerte-25-kg-24573"),
 )
 CATALOG_BY_KEY = {c.key: c for c in CATALOG}
 
