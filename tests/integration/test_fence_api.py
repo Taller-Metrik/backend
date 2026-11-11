@@ -1,7 +1,12 @@
 """Pruebas de integración: metrado y presupuesto de cerco perimétrico (CU-09, RF-24, RF-27)."""
 
+import copy
+import json
+from pathlib import Path
+
 import pytest
 
+from app.services.price_catalog import refresh_prices
 from tests.helpers import TERRENO_100x60, simulate_stop_and_go
 
 
@@ -84,3 +89,45 @@ async def test_cerco_errores(auth_client, project, api, evidencia):
     r3 = await auth_client.post(f"{api}/surveys/9999/fence", json={"kind": "wire"})
     evidencia["obtenido"] = f"{r1.status_code}, {r2.status_code}, {r3.status_code}"
     assert (r1.status_code, r2.status_code, r3.status_code) == (422, 422, 404)
+
+
+FIXTURE = json.loads((Path(__file__).parents[1] / "fixtures" / "promart_cemento.json").read_text(encoding="utf-8"))
+
+
+def _store(url: str):
+    data = copy.deepcopy(FIXTURE)
+    data[0]["items"][0]["sellers"][0]["commertialOffer"]["Price"] = 8.0
+    return data
+
+
+@pytest.mark.evidencia(
+    id="BI-53",
+    nombre="Cerco de alambre presupuestado con el catálogo de la tienda",
+    requisito="RF-23 / RF-24 / RF-27",
+    objetivo=(
+        "Verificar que, sin escribir precios, el cerco de alambre se presupuesta con el catálogo (poste de pino, "
+        "rollo de púas y grapas de Promart) y que un precio escrito por el usuario reemplaza al de la tienda."
+    ),
+    precondiciones="Usuario autenticado con un terreno medido; catálogo actualizado (todos los productos a S/ 8)",
+    entrada="Cerco de alambre sin precios; luego con posts_total = 25",
+    esperado=(
+        "Presupuesto con postes y pies de amigo a S/ 8, rollo a S/ 8, grapa a S/ 8 / (0,5 kg × 170 und/kg); "
+        "origen «store»; con el precio escrito, postes a S/ 25 y origen «input»"
+    ),
+)
+async def test_cerco_con_catalogo(auth_client, project, api, db_session, evidencia):
+    await refresh_prices(db_session, _store, delay_s=0)
+    sid = await _terreno(auth_client, project, api)
+    body = (await auth_client.post(f"{api}/surveys/{sid}/fence", json={"kind": "wire"})).json()
+    lines = {line["key"]: line["unit_price"] for line in body["budget"]["lines"]}
+    own = (await auth_client.post(f"{api}/surveys/{sid}/fence", json={"kind": "wire", "prices": {"posts_total": 25}})).json()
+    own_lines = {line["key"]: line["unit_price"] for line in own["budget"]["lines"]}
+    evidencia["obtenido"] = (
+        f"catálogo: {lines}, origen={body['price_sources']}; con precio propio: postes={own_lines['posts_total']}, "
+        f"origen={own['price_sources']['posts_total']}"
+    )
+    assert lines["posts_total"] == lines["braces"] == lines["wire_rolls"] == 8.0
+    assert lines["staples"] == pytest.approx(8.0 / (0.5 * 170), abs=0.005)
+    assert body["price_sources"]["posts_total"] == "store"
+    assert own_lines["posts_total"] == 25 and own_lines["braces"] == 8.0
+    assert own["price_sources"]["posts_total"] == "input"
