@@ -46,16 +46,17 @@ async def survey_fence(survey_id: int, payload: FenceIn, db: DbDep, user: Curren
                 for p in await PriceService(db, user).list()
                 if p.price is not None
             }
-            priceable = {i.key for i in takeoff.items if i.priceable}
-            for key, (price, source) in unit_prices(priceable, catalog, params).items():
+            for key, (price, source) in unit_prices({i.key for i in takeoff.items if i.priceable}, catalog, params).items():
                 prices[key], sources[key] = price, source
             if sources:
                 takeoff.notes.append(
-                    "Precios de la tienda: solo materiales (sin mano de obra); encofrado, excavación y portones "
-                    "se presupuestan con el precio que escribas."
+                    "Presupuesto solo de materiales (precios de la tienda). El trabajo (trazo, excavación, "
+                    "eliminación, encofrado) se muestra como desglose sin precio."
                 )
+        priceable_keys = {i.key for i in takeoff.items if i.priceable}
         for key, price in (payload.prices or {}).items():
-            prices[key], sources[key] = price, "input"
+            if key in priceable_keys:
+                prices[key], sources[key] = price, "input"
         budget = (
             build_budget(takeoff.items, prices, overhead_pct=payload.overhead_pct, profit_pct=payload.profit_pct)
             if prices or payload.prices is not None

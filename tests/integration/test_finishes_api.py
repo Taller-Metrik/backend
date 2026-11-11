@@ -34,12 +34,12 @@ async def _recorrido(auth_client, project, api, mode="interior") -> int:
 
 @pytest.mark.evidencia(
     id="BI-48",
-    nombre="POST /surveys/{id}/finishes con precios del catálogo y mano de obra",
+    nombre="POST /surveys/{id}/finishes: presupuesto solo de materiales con el catálogo",
     requisito="RF-22 / RF-23 / RF-24",
-    objetivo="Verificar que el metrado usa los precios de la tienda para los insumos y los del usuario para la mano de obra.",
+    objetivo="Verificar que el presupuesto lleva solo materiales (tienda o precio propio) y que la mano de obra queda como desglose.",
     precondiciones="Catálogo actualizado (tienda simulada a S/ 30,90); usuario con su precio propio de cemento S/ 28,00",
-    entrada="Aula 5×4 m, altura 2,50 m, puerta y ventana; mano de obra de piso S/ 25 por m²",
-    esperado="HTTP 200; porcelanato a S/ 30,90 (tienda), cemento a S/ 28,00 (usuario), piso 20 m² × S/ 25; pegamento sin precio",
+    entrada="Aula 5×4 m, altura 2,50 m, puerta y ventana; labor_prices de piso S/ 25 (app anterior, se ignora)",
+    esperado="HTTP 200; porcelanato y pegamento a S/ 30,90 (tienda), cemento a S/ 28,00 (usuario); partidas de mano de obra informativas y fuera del presupuesto",
 )
 async def test_acabados_con_presupuesto(auth_client, project, api, db_session, evidencia):
     await refresh_prices(db_session, _store, delay_s=0)
@@ -54,16 +54,19 @@ async def test_acabados_con_presupuesto(auth_client, project, api, db_session, e
     evidencia["obtenido"] = (
         f"HTTP {resp.status_code}; porcelanato={lineas['porcelain_box']['unit_price']} "
         f"({body['price_sources']['porcelain_box']}); cemento={lineas['cement_bag']['unit_price']} "
-        f"({body['price_sources']['cement_bag']}); piso={lineas['floor_m2']['subtotal']}; total={body['budget']['total']}"
+        f"({body['price_sources']['cement_bag']}); partidas={sorted(lineas)}; total={body['budget']['total']}"
     )
     assert resp.status_code == 200
     assert lineas["porcelain_box"]["unit_price"] == pytest.approx(30.9)
     assert body["price_sources"]["porcelain_box"] == "store"
     assert lineas["cement_bag"]["unit_price"] == pytest.approx(28.0)
     assert body["price_sources"]["cement_bag"] == "user"
-    assert lineas["floor_m2"]["subtotal"] == pytest.approx(500.0)
-    assert "tile_adhesive_bag" in body["budget"]["missing_prices"]
-    assert any("total es parcial" in n for n in body["notes"])
+    mano_de_obra = {"floor_m2", "baseboard_m", "plaster_m2", "wall_paint_m2", "ceiling_paint_m2"}
+    items = {i["key"]: i for i in body["items"]}
+    assert all(not items[k]["priceable"] for k in mano_de_obra)
+    assert not mano_de_obra & (set(lineas) | set(body["budget"]["missing_prices"]))
+    assert lineas["tile_adhesive_bag"]["unit_price"] == pytest.approx(30.9)
+    assert body["budget"]["missing_prices"] == []
     assert body["assumptions"]
 
 
