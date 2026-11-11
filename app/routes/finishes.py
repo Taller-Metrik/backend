@@ -20,7 +20,7 @@ STALE_AFTER = timedelta(days=7)  # un precio de tienda más antiguo se usa, pero
 
 @router.post("/surveys/{survey_id}/finishes", response_model=FinishesOut)
 async def survey_finishes(survey_id: int, payload: FinishesIn, db: DbDep, user: CurrentUserDep) -> FinishesOut:
-    """Partidas e insumos para revestir el ambiente; presupuesto con precios del catálogo y de mano de obra."""
+    """Partidas e insumos para revestir el ambiente; presupuesto solo de materiales con el catálogo."""
     try:
         survey = await SurveyService(db, user).get(survey_id)
     except NotFoundError:
@@ -54,8 +54,6 @@ async def survey_finishes(survey_id: int, payload: FinishesIn, db: DbDep, user: 
                 warnings.append(f"El precio de «{p.description}» es del {p.fetched_at:%d/%m/%Y} (más de 7 días).")
             if p.source == "store" and p.status == "error":
                 warnings.append(f"La última consulta a la tienda de «{p.description}» falló: se usa el último precio.")
-    for key, price in (payload.labor_prices or {}).items():
-        prices[key], sources[key] = price, "input"
     budget = (
         build_budget(takeoff.items, prices, overhead_pct=payload.overhead_pct, profit_pct=payload.profit_pct)
         if prices

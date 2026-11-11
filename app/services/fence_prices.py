@@ -1,8 +1,8 @@
 """Precio unitario de las partidas del cerco a partir del catálogo de materiales (RF-23, RF-27).
 
 Cada partida se costea con su receta de materiales (cantidad por unidad de partida, en la unidad de contenido del
-catálogo: kg, m, und), con las proporciones usuales en obra (rendimientos tipo CAPECO). Es **solo material**: la
-mano de obra, el encofrado, la excavación y los portones no tienen producto en la tienda y los escribe el usuario.
+catálogo: kg, m, und), con las proporciones usuales en obra (rendimientos tipo CAPECO). El presupuesto es **solo de
+materiales**: el trabajo (trazo, excavación, eliminación, encofrado) se muestra como desglose sin precio.
 """
 
 from dataclasses import dataclass
@@ -46,6 +46,7 @@ def recipes(p: FenceParams) -> dict[str, dict[str, float]]:
         "braces": {"pine_post": 1.0},
         "wire_rolls": {"barbed_wire_roll": p.roll_m},
         "staples": {"staples_bag": 1 / STAPLES_PER_KG},
+        "concrete_m3": _mix(_FOOTING_1_10_PG30),  # concreto ciclópeo de los hoyos
         # Muro de ladrillo
         "wall_m2": wall,
         "columns_concrete_m3": _mix(_CONCRETE_175),

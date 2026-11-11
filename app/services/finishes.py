@@ -79,17 +79,17 @@ def _validate(walls: list[float], openings: list[Opening], p: FinishParams) -> N
             raise GeometryError(f"Los vanos del muro {w + 1} ({_n(widths)} m) no caben en el muro ({_n(length)} m) (EX-08)")
 
 
-def _item(key: str, description: str, unit: str, value: float) -> TakeoffItem:
+def _item(key: str, description: str, unit: str, value: float, priceable: bool = True) -> TakeoffItem:
     """Partida sin rango (no depende del GPS): cantidad = mínimo = máximo; se compra redondeado hacia arriba."""
     if unit in _PURCHASE_UNITS:
         value = float(math.ceil(value - 1e-9))
-        return TakeoffItem(key, description, unit, value, value, value, value)
+        return TakeoffItem(key, description, unit, value, value, value, value, priceable)
     value = round(value, 2)
-    return TakeoffItem(key, description, unit, value, value, value, value)
+    return TakeoffItem(key, description, unit, value, value, value, value, priceable)
 
 
 def finishes_takeoff(area_m2: float, walls: list[float], params: FinishParams, openings: list[Opening]) -> FinishTakeoff:
-    """Partidas (mano de obra) e insumos (con clave del catálogo) para revestir un ambiente."""
+    """Mano de obra (desglose, sin precio) e insumos (con clave del catálogo, presupuestables) para revestir un ambiente."""
     _validate(walls, openings, params)
     p, h = params, params.height_m
     perimeter = sum(walls)
@@ -105,11 +105,11 @@ def finishes_takeoff(area_m2: float, walls: list[float], params: FinishParams, o
     mortar_m3 = plaster_m2 * p.mortar_m3_per_m2
 
     items = [
-        _item("floor_m2", "Piso de porcelanato (mano de obra)", "m²", area_m2),
-        _item("baseboard_m", "Contrazócalo de porcelanato h = 0,10 m (mano de obra)", "m", baseboard_m),
-        _item("plaster_m2", "Tarrajeo de muros interiores 1:5 (mano de obra)", "m²", plaster_m2),
-        _item("wall_paint_m2", f"Pintura látex en muros, {p.paint_coats} manos (mano de obra)", "m²", plaster_m2),
-        _item("ceiling_paint_m2", f"Pintura látex en cielo raso, {p.paint_coats} manos (mano de obra)", "m²", area_m2),
+        _item("floor_m2", "Piso de porcelanato (mano de obra)", "m²", area_m2, priceable=False),
+        _item("baseboard_m", "Contrazócalo de porcelanato h = 0,10 m (mano de obra)", "m", baseboard_m, priceable=False),
+        _item("plaster_m2", "Tarrajeo de muros interiores 1:5 (mano de obra)", "m²", plaster_m2, priceable=False),
+        _item("wall_paint_m2", f"Pintura látex en muros, {p.paint_coats} manos (mano de obra)", "m²", plaster_m2, priceable=False),
+        _item("ceiling_paint_m2", f"Pintura látex en cielo raso, {p.paint_coats} manos (mano de obra)", "m²", area_m2, priceable=False),
         _item("porcelain_box", "Porcelanato (cajas)", "caja",
               (area_m2 * (1 + p.tile_waste) + baseboard_m2 * (1 + p.baseboard_waste)) / p.tile_box_m2),
         _item("tile_adhesive_bag", "Pegamento para porcelanato (bolsas de 25 kg)", "bolsa",
@@ -134,6 +134,6 @@ def finishes_takeoff(area_m2: float, walls: list[float], params: FinishParams, o
     ]
     notes = [
         "Metrado referencial a partir del plano medido; verificar medidas con wincha antes de comprar.",
-        "Las partidas en m² y m son de mano de obra; los materiales van como insumos aparte.",
+        "Presupuesto solo de materiales: la mano de obra (m² y m) se muestra como desglose sin precio.",
     ]
     return FinishTakeoff(items=items, assumptions=assumptions, notes=notes)

@@ -124,7 +124,7 @@ def _wire(fenced: list[float], gates: list[Gate], p: FenceParams) -> _Quantities
     wire_m = net * p.strands * (1 + p.wire_waste)
     holes = total + braces  # los pies de amigo también se entierran
     return {
-        "layout_m": ("Trazo y replanteo", "m", net + sum(g.width_m for g in gates), True),
+        "layout_m": ("Trazo y replanteo (trabajo)", "m", net + sum(g.width_m for g in gates), _INFO),
         "posts_line": ("Postes de línea", "und", intermediate - brace, _INFO),
         "posts_brace": ("Postes de refuerzo (cada ~50 m)", "und", brace, _INFO),
         "posts_corner": ("Postes esquineros", "und", corner, _INFO),
@@ -134,7 +134,7 @@ def _wire(fenced: list[float], gates: list[Gate], p: FenceParams) -> _Quantities
         "wire_m": (f"Alambre de púas ({p.strands} hilos, +{p.wire_waste:.0%} desperdicio)", "m", wire_m, _INFO),
         "wire_rolls": (f"Rollos de alambre de {p.roll_m:.0f} m", "rollo", math.ceil(wire_m / p.roll_m - 1e-9), True),
         "staples": ("Grapas", "und", math.ceil(total * p.strands * p.staples_factor - 1e-9), True),
-        "excavation_m3": ("Excavación de hoyos (postes y pies de amigo)", "m³", holes * p.hole_m3, True),
+        "excavation_m3": ("Excavación de hoyos (trabajo)", "m³", holes * p.hole_m3, _INFO),
         "concrete_m3": ("Concreto ciclópeo (postes y pies de amigo)", "m³", holes * p.concrete_per_hole_m3, True),
         "gates": ("Portones", "und", len(gates), True),
     }
@@ -164,9 +164,11 @@ def _brick(fenced: list[float], gates: list[Gate], p: FenceParams) -> _Quantitie
         + net * p.beam_height_m * 2
     )
     return {
-        "layout_m": ("Trazo y replanteo", "m", net + sum(g.width_m for g in gates), True),
-        "excavation_m3": ("Excavación de zanjas", "m³", excavation, True),
-        "disposal_m3": (f"Eliminación de material (+{p.swell:.0%} esponjamiento)", "m³", excavation * (1 + p.swell), True),
+        "layout_m": ("Trazo y replanteo (trabajo)", "m", net + sum(g.width_m for g in gates), _INFO),
+        "excavation_m3": ("Excavación de zanjas (trabajo)", "m³", excavation, _INFO),
+        "disposal_m3": (
+            f"Eliminación de material (+{p.swell:.0%} esponjamiento, trabajo)", "m³", excavation * (1 + p.swell), _INFO
+        ),
         "footing_m3": ("Cimiento corrido 1:10 + 30 % PG", "m³", excavation, True),
         "plinth_m3": ("Sobrecimiento 1:8 + 25 % PM", "m³", net * p.plinth_section_m2, True),
         "columns": ("Columnas de confinamiento 0,25 × 0,13 m", "und", columns, _INFO),
@@ -177,7 +179,7 @@ def _brick(fenced: list[float], gates: list[Gate], p: FenceParams) -> _Quantitie
         ),
         "beam_concrete_m3": ("Concreto f'c = 175 kg/cm² en viga solera", "m³", net * t * p.beam_height_m, True),
         "steel_kg": ("Acero (columnas, solera y estribos)", "kg", steel, True),
-        "formwork_m2": ("Encofrado (sobrecimiento, columnas y viga)", "m²", formwork, True),
+        "formwork_m2": ("Encofrado (sobrecimiento, columnas y viga; trabajo)", "m²", formwork, _INFO),
         "wall_m2": ("Muro de ladrillo en soga", "m²", wall_m2, True),
         "bricks": (
             f"Ladrillo KK 18 huecos (+{p.brick_waste:.0%})", "und",
