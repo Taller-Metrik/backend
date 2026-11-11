@@ -167,7 +167,7 @@ def test_cierre_adaptativo(evidencia):
 
 
 @pytest.mark.evidencia(
-    id="BU-61",
+    id="BU-103",
     nombre="Plano correcto al empezar a mitad de una pared",
     requisito="RF-05",
     objetivo="Verificar que empezar el recorrido a mitad de una pared no deforma el plano: "
