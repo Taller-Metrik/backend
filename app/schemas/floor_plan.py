@@ -5,9 +5,13 @@ from pydantic import BaseModel, Field
 
 class JoinIn(BaseModel):
     a_survey: int = Field(description="Ambiente ya ubicado (o la base)")
-    a_wall: int = Field(ge=0, le=10_000, description="Muro de A (0 = del vértice 1 al 2)")
+    a_wall: int | None = Field(default=None, ge=0, le=10_000, description="Muro de A (0 = del vértice 1 al 2)")
+    a_point: tuple[float, float] | None = Field(
+        default=None, description="Puerta en las coordenadas de A: se usa el muro más cercano y se alinea la puerta"
+    )
     b_survey: int
-    b_wall: int = Field(ge=0, le=10_000)
+    b_wall: int | None = Field(default=None, ge=0, le=10_000)
+    b_point: tuple[float, float] | None = None
     thickness_m: float = Field(default=0.15, gt=0, le=0.5, description="Espesor del muro compartido (0,15 tabique; 0,25 portante)")
 
 
