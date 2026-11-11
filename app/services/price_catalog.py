@@ -37,6 +37,7 @@ class CatalogEntry:
 CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry("cement_bag", "Cemento Portland tipo I", "bolsa", 42.5, "kg", "cemento-portland-tipo-i-x42-5kg-sol"),
     CatalogEntry("sand_bag", "Arena gruesa", "saco", 40.0, "kg", "arena-gruesa-unicon-40kg"),
+    CatalogEntry("stone_bag", "Piedra chancada", "saco", 40.0, "kg", "piedra-chancada-unicon-40kg"),
     CatalogEntry("paint_gallon", "Pintura látex", "galón", 1.0, "gal", "duralatex-cpp-blanco-1-galon"),
     CatalogEntry("porcelain_box", "Porcelanato 60 × 60 cm", "caja", 1.44, "m²",
                  "piso-porcelanato-liso-unicolor-gris-60x60cm-1-44m2-167830"),
