@@ -53,3 +53,29 @@ async def test_plano_vivienda_errores(auth_client, project, api, evidencia):
     r2 = await auth_client.post(f"{api}/projects/9999/floor-plan", json={"rooms": [sala], "joins": []})
     evidencia["obtenido"] = f"{r1.status_code}, {r2.status_code}"
     assert (r1.status_code, r2.status_code) == (422, 404)
+
+
+@pytest.mark.evidencia(
+    id="BI-52",
+    nombre="Plano de vivienda unido por puertas por la API",
+    requisito="RF-25",
+    objetivo="Verificar que la API acepta el punto de la puerta en lugar del número de muro.",
+    entrada="Pasillo 10×1,2 m y Sala 4×3 m; unión con a_point=(2; 1,2) y b_point=(2; 0), sin a_wall ni b_wall",
+    esperado="HTTP 200, la sala queda sobre el pasillo (y ≥ 1,35) y sin advertencias; sin muro ni puerta: HTTP 422",
+)
+async def test_plano_por_puertas(auth_client, project, api, evidencia):
+    pasillo = await _ambiente(auth_client, api, project["id"], "Pasillo", [[0, 0], [10, 0], [10, 1.2], [0, 1.2]])
+    sala = await _ambiente(auth_client, api, project["id"], "Sala", [[0, 0], [4, 0], [4, 3], [0, 3]])
+    body = {"rooms": [pasillo, sala],
+            "joins": [{"a_survey": pasillo, "a_point": [2, 1.2], "b_survey": sala, "b_point": [2, 0], "thickness_m": 0.15}]}
+    resp = await auth_client.post(f"{api}/projects/{project['id']}/floor-plan", json=body)
+    mal = await auth_client.post(f"{api}/projects/{project['id']}/floor-plan",
+                                 json={"rooms": [pasillo, sala], "joins": [{"a_survey": pasillo, "b_survey": sala}]})
+    data = resp.json()
+    sala_v = next(r for r in data["rooms"] if r["name"] == "Sala")["vertices"] if resp.status_code == 200 else []
+    evidencia["obtenido"] = f"HTTP {resp.status_code}, y mín sala={min((v[1] for v in sala_v), default=None)}, " \
+                            f"advertencias={data.get('warnings')}; sin muro ni puerta: HTTP {mal.status_code}"
+    assert resp.status_code == 200
+    assert min(v[1] for v in sala_v) == pytest.approx(1.35, abs=1e-6)
+    assert data["warnings"] == []
+    assert mal.status_code == 422

@@ -5,6 +5,10 @@ compartido se aplica una **transformación rígida** (rotación + traslación, s
 paralelo al de A, en sentido opuesto, centrado y separado por el espesor del muro, del lado de afuera de A.
 Las posiciones se propagan desde el primer ambiente (base) recorriendo las uniones.
 
+Cada lado de una unión indica su muro o el **punto de su puerta** (en las coordenadas de su ambiente). Con la
+puerta se usa el muro más cercano y se alinean las dos puertas: así varios ambientes en la misma pared de un pasillo
+quedan cada uno frente a su puerta. Sin puerta se alinean los centros de los muros.
+
 Controles de calidad (advertencias): muros unidos de largo distinto (> 10 cm, EX-10), ambientes que se
 superponen (EX-11), esquinas fuera de escuadra (> 2° de un múltiplo de 90°), uniones que no cierran en un
 ciclo y ambientes sin unir (no se incluyen).
@@ -12,7 +16,7 @@ ciclo y ambientes sin unir (no se incluyen).
 
 import io
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import ezdxf
 
@@ -34,10 +38,18 @@ class Room:
 @dataclass(frozen=True)
 class Join:
     a_survey: int
-    a_wall: int  # muro i = del vértice i+1 al i+2 (0 = del vértice 1 al 2)
+    a_wall: int | None  # muro i = del vértice i+1 al i+2 (0 = del vértice 1 al 2); None = el más cercano a a_point
     b_survey: int
-    b_wall: int
+    b_wall: int | None
     thickness_m: float
+    a_point: Point | None = None  # puerta en las coordenadas del ambiente A
+    b_point: Point | None = None
+    a_t: float = 0.5  # posición de la puerta a lo largo del muro (0 = su primer vértice, 0,5 = centro)
+    b_t: float = 0.5
+
+    @property
+    def by_door(self) -> bool:
+        return self.a_point is not None or self.b_point is not None
 
 
 @dataclass(frozen=True)
@@ -79,17 +91,39 @@ def _outward_normal(a: list[Point], i: int) -> Point:
     return (nx, ny) if signed_area(a) > 0 else (-nx, -ny)  # antihorario: el interior está a la izquierda
 
 
-def place_room(a_world: list[Point], a_wall: int, b_local: list[Point], b_wall: int, thickness_m: float) -> list[Point]:
-    """Ubica B pegado al muro `a_wall` de A, del lado de afuera y a `thickness_m` de distancia."""
+def _at(a: Point, b: Point, t: float) -> Point:
+    return a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+
+
+def _nearest_wall(v: list[Point], p: Point) -> tuple[int, float]:
+    """Muro más cercano al punto y posición (0–1) de su proyección sobre él."""
+    best = (math.inf, 0, 0.5)
+    for i in range(len(v)):
+        (x1, y1), (x2, y2) = _wall(v, i)
+        dx, dy = x2 - x1, y2 - y1
+        length2 = dx * dx + dy * dy
+        t = min(1.0, max(0.0, ((p[0] - x1) * dx + (p[1] - y1) * dy) / length2)) if length2 else 0.0
+        d = math.dist(p, (x1 + dx * t, y1 + dy * t))
+        if d < best[0]:
+            best = (d, i, t)
+    return best[1], best[2]
+
+
+def place_room(
+    a_world: list[Point], a_wall: int, b_local: list[Point], b_wall: int, thickness_m: float,
+    a_t: float = 0.5, b_t: float = 0.5,
+) -> list[Point]:
+    """Ubica B pegado al muro `a_wall` de A, del lado de afuera, a `thickness_m` de distancia y con el punto
+    `b_t` de su muro frente al punto `a_t` del muro de A (0,5 = centros; con puerta, la puerta)."""
     n = _outward_normal(a_world, a_wall)
     nb = _outward_normal(b_local, b_wall)
-    mid_a = _mid(*_wall(a_world, a_wall))
+    mid_a = _at(*_wall(a_world, a_wall), a_t)
     target = (mid_a[0] + n[0] * thickness_m, mid_a[1] + n[1] * thickness_m)
     # Se gira B hasta que la normal de afuera de su muro apunte hacia A (opuesta a la de A). Se usa la normal y
     # no el centroide porque en un ambiente cóncavo el centroide puede caer del otro lado del muro.
     theta = math.atan2(-n[1], -n[0]) - math.atan2(nb[1], nb[0])
     rotated = _transform(b_local, theta, 0, 0)
-    mid_b = _mid(*_wall(rotated, b_wall))
+    mid_b = _at(*_wall(rotated, b_wall), b_t)
     return _transform(rotated, 0, target[0] - mid_b[0], target[1] - mid_b[1])
 
 
@@ -115,18 +149,36 @@ def _overlap(a: list[Point], b: list[Point]) -> bool:
 
 def _validate(rooms: dict[int, Room], joins: list[Join]) -> None:
     for k, j in enumerate(joins, start=1):
-        for sid, wall in ((j.a_survey, j.a_wall), (j.b_survey, j.b_wall)):
+        for sid, wall, point in ((j.a_survey, j.a_wall, j.a_point), (j.b_survey, j.b_wall, j.b_point)):
             if sid not in rooms:
                 raise GeometryError(f"La unión {k} usa el ambiente {sid}, que no está en el plano")
-            if not 0 <= wall < len(rooms[sid].vertices):
+            if wall is None and point is None:
+                raise GeometryError(f"La unión {k} debe indicar el muro o la puerta de «{rooms[sid].name}»")
+            if wall is not None and not 0 <= wall < len(rooms[sid].vertices):
                 raise GeometryError(f"La unión {k} usa el muro {wall + 1} de «{rooms[sid].name}», que no existe")
+            if point is not None and not all(math.isfinite(c) for c in point):
+                raise GeometryError(f"La puerta de la unión {k} tiene coordenadas inválidas")
         if not 0 < j.thickness_m <= MAX_THICKNESS_M:
             raise GeometryError(f"El espesor de la unión {k} debe estar entre 0 y {MAX_THICKNESS_M} m")
         if j.a_survey == j.b_survey:
             raise GeometryError(f"La unión {k} une un ambiente consigo mismo")
 
 
+def _resolve(j: Join, by_id: dict[int, Room]) -> Join:
+    """Con puerta, el muro (si no se indicó) es el más cercano a ella y la alineación es en la puerta."""
+    a_wall, a_t, b_wall, b_t = j.a_wall, 0.5, j.b_wall, 0.5
+    if j.a_point is not None:
+        wall, a_t = _nearest_wall(by_id[j.a_survey].vertices, j.a_point)
+        a_wall = wall if a_wall is None else a_wall
+    if j.b_point is not None:
+        wall, b_t = _nearest_wall(by_id[j.b_survey].vertices, j.b_point)
+        b_wall = wall if b_wall is None else b_wall
+    return replace(j, a_wall=a_wall, b_wall=b_wall, a_t=a_t, b_t=b_t)
+
+
 def _check_join(j: Join, by_id: dict[int, Room], warnings: list[str]) -> None:
+    if j.by_door:
+        return  # por puerta los muros no tienen por qué medir lo mismo (un pasillo largo con un cuarto corto)
     na, nb = by_id[j.a_survey].name, by_id[j.b_survey].name
     la = math.dist(*_wall(by_id[j.a_survey].vertices, j.a_wall))
     lb = math.dist(*_wall(by_id[j.b_survey].vertices, j.b_wall))
@@ -141,6 +193,7 @@ def build_floor_plan(rooms: list[Room], joins: list[Join]) -> FloorPlan:
         raise GeometryError("El plano de vivienda necesita al menos un ambiente")
     by_id = {r.survey_id: r for r in rooms}
     _validate(by_id, joins)
+    joins = [_resolve(j, by_id) for j in joins]
     warnings: list[str] = []
     placed: dict[int, list[Point]] = {rooms[0].survey_id: list(rooms[0].vertices)}
     pending = list(joins)
@@ -152,12 +205,15 @@ def build_floor_plan(rooms: list[Room], joins: list[Join]) -> FloorPlan:
             if not a_in and not b_in:
                 continue  # todavía no se puede ubicar: se reintenta en la siguiente vuelta
             if not b_in:
-                placed[j.b_survey] = place_room(placed[j.a_survey], j.a_wall, by_id[j.b_survey].vertices, j.b_wall, j.thickness_m)
+                placed[j.b_survey] = place_room(placed[j.a_survey], j.a_wall, by_id[j.b_survey].vertices, j.b_wall,
+                                                j.thickness_m, j.a_t, j.b_t)
             elif not a_in:
-                placed[j.a_survey] = place_room(placed[j.b_survey], j.b_wall, by_id[j.a_survey].vertices, j.a_wall, j.thickness_m)
+                placed[j.a_survey] = place_room(placed[j.b_survey], j.b_wall, by_id[j.a_survey].vertices, j.a_wall,
+                                                j.thickness_m, j.b_t, j.a_t)
             else:
                 # Unión de un ciclo: los dos ya están ubicados; se comprueba que los muros queden a la distancia indicada
-                gap = math.dist(_mid(*_wall(placed[j.a_survey], j.a_wall)), _mid(*_wall(placed[j.b_survey], j.b_wall)))
+                gap = math.dist(_at(*_wall(placed[j.a_survey], j.a_wall), j.a_t),
+                                _at(*_wall(placed[j.b_survey], j.b_wall), j.b_t))
                 if abs(gap - j.thickness_m) > LENGTH_TOLERANCE_M:
                     warnings.append(f"La unión «{by_id[j.a_survey].name}»–«{by_id[j.b_survey].name}» no cierra "
                                     f"({gap - j.thickness_m:+.2f} m): revisar las medidas.")
