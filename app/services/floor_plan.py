@@ -126,7 +126,7 @@ def _validate(rooms: dict[int, Room], joins: list[Join]) -> None:
             raise GeometryError(f"La unión {k} une un ambiente consigo mismo")
 
 
-def _check_join(j: Join, by_id: dict[int, Room], placed: dict[int, list[Point]], warnings: list[str]) -> None:
+def _check_join(j: Join, by_id: dict[int, Room], warnings: list[str]) -> None:
     na, nb = by_id[j.a_survey].name, by_id[j.b_survey].name
     la = math.dist(*_wall(by_id[j.a_survey].vertices, j.a_wall))
     lb = math.dist(*_wall(by_id[j.b_survey].vertices, j.b_wall))
@@ -161,7 +161,7 @@ def build_floor_plan(rooms: list[Room], joins: list[Join]) -> FloorPlan:
                 if abs(gap - j.thickness_m) > LENGTH_TOLERANCE_M:
                     warnings.append(f"La unión «{by_id[j.a_survey].name}»–«{by_id[j.b_survey].name}» no cierra "
                                     f"({gap - j.thickness_m:+.2f} m): revisar las medidas.")
-            _check_join(j, by_id, placed, warnings)
+            _check_join(j, by_id, warnings)
             pending.remove(j)
             progress = True
 
