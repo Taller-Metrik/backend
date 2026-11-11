@@ -138,3 +138,49 @@ def test_unir_ambiente_concavo(evidencia):
     assert b1[0] == pytest.approx(3.15, abs=1e-6) and b2[0] == pytest.approx(3.15, abs=1e-6)
     assert sorted((b1[1], b2[1])) == pytest.approx([0.0, 4.0], abs=1e-6)
     assert not any("superpon" in w for w in plan.warnings)
+
+
+@pytest.mark.evidencia(
+    id="BU-105",
+    nombre="Unir ambientes por la puerta del pasillo",
+    requisito="RF-25",
+    objetivo="Verificar que, con el punto de la puerta en cada ambiente, se elige el muro más cercano y se alinean "
+    "las puertas (no el centro de los muros): varios ambientes en la misma pared del pasillo no se superponen.",
+    entrada="Pasillo 10×1,2 m con puertas en (2; 1,2) y (8; 1,2); Sala 4×3 m y Cocina 3×3 m que empiezan en la mitad "
+    "de su muro sur (2; 0) y (1,5; 0); espesor 0,15 m",
+    esperado="Sala y Cocina sobre el pasillo (y ≥ 1,35), puertas alineadas en x = 2 y x = 8, sin superposición ni "
+    "aviso de largo distinto",
+)
+def test_unir_por_puertas(evidencia):
+    pasillo = Room(1, "Pasillo", _rect(10, 1.2))
+    sala = Room(2, "Sala", _rect(4, 3))
+    cocina = Room(3, "Cocina", _rect(3, 3))
+    joins = [
+        Join(1, None, 2, None, 0.15, a_point=(2.0, 1.2), b_point=(2.0, 0.0)),
+        Join(1, None, 3, None, 0.15, a_point=(8.0, 1.2), b_point=(1.5, 0.0)),
+    ]
+    plan = build_floor_plan([pasillo, sala, cocina], joins)
+    v = {r.name: r.vertices for r in plan.rooms}
+    centro = {n: sum(x for x, _ in pts) / len(pts) for n, pts in v.items()}
+    evidencia["obtenido"] = (f"y mín sala={min(y for _, y in v['Sala']):.3f}, cocina={min(y for _, y in v['Cocina']):.3f}; "
+                             f"centro x sala={centro['Sala']:.2f}, cocina={centro['Cocina']:.2f}; advertencias={plan.warnings}")
+    assert min(y for _, y in v["Sala"]) == pytest.approx(1.35, abs=1e-6)
+    assert min(y for _, y in v["Cocina"]) == pytest.approx(1.35, abs=1e-6)
+    assert centro["Sala"] == pytest.approx(2.0, abs=1e-6)
+    assert centro["Cocina"] == pytest.approx(8.0, abs=1e-6)
+    assert plan.warnings == []
+
+
+@pytest.mark.evidencia(
+    id="BU-106",
+    nombre="Unión sin muro ni puerta",
+    requisito="RF-25 / EX-08",
+    objetivo="Verificar que cada lado de una unión indica su muro o el punto de su puerta.",
+    entrada="Unión Pasillo–Sala sin a_wall ni a_point",
+    esperado="GeometryError que pide el muro o la puerta",
+)
+def test_union_sin_muro_ni_puerta(evidencia):
+    with pytest.raises(GeometryError) as exc:
+        build_floor_plan([Room(5, "Pasillo", _rect(10, 1.2)), SALA], [Join(5, None, 1, 3, 0.15)])
+    evidencia["obtenido"] = str(exc.value)
+    assert "puerta" in str(exc.value)
