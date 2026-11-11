@@ -63,6 +63,7 @@ async def test_acabados_con_presupuesto(auth_client, project, api, db_session, e
     assert body["price_sources"]["cement_bag"] == "user"
     assert lineas["floor_m2"]["subtotal"] == pytest.approx(500.0)
     assert "tile_adhesive_bag" in body["budget"]["missing_prices"]
+    assert any("total es parcial" in n for n in body["notes"])
     assert body["assumptions"]
 
 

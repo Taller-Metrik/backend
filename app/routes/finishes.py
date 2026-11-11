@@ -1,6 +1,7 @@
 """Metrado de acabados de un ambiente con presupuesto (CU-07, RF-22 a RF-24)."""
 
 from dataclasses import asdict
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -14,6 +15,7 @@ from app.services.price_service import PriceService
 from app.services.project_service import NotFoundError, SurveyService
 
 router = APIRouter(tags=["Metrado de acabados"])
+STALE_AFTER = timedelta(days=7)  # un precio de tienda más antiguo se usa, pero con aviso
 
 
 @router.post("/surveys/{survey_id}/finishes", response_model=FinishesOut)
@@ -31,7 +33,7 @@ async def survey_finishes(survey_id: int, payload: FinishesIn, db: DbDep, user: 
     try:
         takeoff = finishes_takeoff(
             survey.area_m2,
-            [float(w) for w in survey.wall_lengths_m],
+            [float(w) for w in survey.wall_lengths_m or []],  # recorridos antiguos sin muros → 422, no 500
             FinishParams(height_m=payload.height_m),
             [Opening(o.wall, o.kind, o.width_m, o.height_m) for o in payload.openings],
         )
@@ -41,10 +43,17 @@ async def survey_finishes(survey_id: int, payload: FinishesIn, db: DbDep, user: 
     item_keys = {i.key for i in takeoff.items}
     prices: dict[str, float] = {}
     sources: dict[str, str] = {}
+    warnings: list[str] = []
+    now = datetime.now(UTC)
     if payload.use_catalog:
         for p in await PriceService(db, user).list():
-            if p.key in item_keys and p.price is not None:
-                prices[p.key], sources[p.key] = p.price, p.source
+            if p.key not in item_keys or p.price is None:
+                continue
+            prices[p.key], sources[p.key] = p.price, p.source
+            if p.source == "store" and p.fetched_at and now - p.fetched_at > STALE_AFTER:
+                warnings.append(f"El precio de «{p.description}» es del {p.fetched_at:%d/%m/%Y} (más de 7 días).")
+            if p.source == "store" and p.status == "error":
+                warnings.append(f"La última consulta a la tienda de «{p.description}» falló: se usa el último precio.")
     for key, price in (payload.labor_prices or {}).items():
         prices[key], sources[key] = price, "input"
     budget = (
@@ -52,6 +61,8 @@ async def survey_finishes(survey_id: int, payload: FinishesIn, db: DbDep, user: 
         if prices
         else None
     )
+    if budget and budget.missing_prices:
+        warnings.append(f"{len(budget.missing_prices)} partidas sin precio no entran al presupuesto: el total es parcial.")
     return FinishesOut(
         survey_id=survey_id,
         area_m2=survey.area_m2,
@@ -59,7 +70,7 @@ async def survey_finishes(survey_id: int, payload: FinishesIn, db: DbDep, user: 
         height_m=payload.height_m,
         items=[asdict(i) for i in takeoff.items],
         assumptions=takeoff.assumptions,
-        notes=takeoff.notes,
+        notes=takeoff.notes + warnings,
         budget=asdict(budget) if budget else None,
         price_sources=sources,
     )
