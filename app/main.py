@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import app.models  # noqa: F401  (registra los modelos en Base.metadata)
 from app.core.config import settings
 from app.core.database import Base, engine
-from app.routes import auth, field, geometry, gps, ml, projects, validation
+from app.routes import auth, field, floor_plan, geometry, gps, ml, projects, validation
 
 
 @asynccontextmanager
@@ -42,7 +42,10 @@ def create_app(*, use_lifespan: bool = True) -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok", "version": settings.app_version}
 
-    for router in (auth.router, geometry.router, gps.router, projects.router, validation.router, ml.router, field.router):
+    for router in (
+        auth.router, geometry.router, gps.router, projects.router, validation.router, ml.router, field.router,
+        floor_plan.router,
+    ):
         application.include_router(router, prefix=settings.api_prefix)
     return application
 
