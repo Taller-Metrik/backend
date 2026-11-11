@@ -10,7 +10,11 @@ from app.services.price_service import PriceService
 from app.services.project_service import NotFoundError
 
 router = APIRouter(prefix="/prices", tags=["Catálogo de precios"])
-_NOT_FOUND = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material no encontrado en el catálogo")
+
+def _not_found() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material no encontrado en el catálogo")
+
+
 KeyPath = Path(min_length=1, max_length=40)
 
 
@@ -26,7 +30,7 @@ async def set_own_price(payload: PriceIn, db: DbDep, user: CurrentUserDep, key: 
     try:
         return PriceOut(**asdict(await PriceService(db, user).set_own(key, payload.price)))
     except NotFoundError:
-        raise _NOT_FOUND from None
+        raise _not_found() from None
 
 
 @router.delete("/{key}", status_code=status.HTTP_204_NO_CONTENT)
@@ -35,5 +39,5 @@ async def delete_own_price(db: DbDep, user: CurrentUserDep, key: str = KeyPath) 
     try:
         await PriceService(db, user).delete_own(key)
     except NotFoundError:
-        raise _NOT_FOUND from None
+        raise _not_found() from None
     return Response(status_code=status.HTTP_204_NO_CONTENT)

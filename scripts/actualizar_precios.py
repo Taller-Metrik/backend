@@ -5,7 +5,8 @@ Uso (con DATABASE_URL apuntando a la base de datos):
     pip install -r requirements.txt -r requirements-scraper.txt
     python -m scripts.actualizar_precios
 
-Termina con código 1 si ningún material se pudo actualizar (la tienda no responde o cambió su formato).
+Códigos de salida: 0 = todos los materiales actualizados; 1 = falló alguno (los demás sí se guardaron;
+el error queda en el registro de cada material); 2 = error inesperado (por ejemplo, sin base de datos).
 """
 
 import asyncio
@@ -17,12 +18,16 @@ from app.services.price_scraper import fetch_json
 
 
 async def main() -> int:
-    async with SessionLocal() as db:
-        report = await refresh_prices(db, fetch_json)
+    try:
+        async with SessionLocal() as db:
+            report = await refresh_prices(db, fetch_json)
+    except Exception as exc:  # noqa: BLE001 - se informa y se sale con código de error
+        print(f"::error::No se pudo actualizar el catálogo: {type(exc).__name__}: {exc}")
+        return 2
     print(f"Precios actualizados: {report.updated}; con error: {report.failed}")
     for key, error in report.errors.items():
-        print(f"  {key}: {error}")
-    return 0 if report.updated else 1
+        print(f"::warning::{key}: {error}")  # aviso visible en GitHub Actions
+    return 1 if report.failed else 0
 
 
 if __name__ == "__main__":
