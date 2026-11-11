@@ -35,7 +35,10 @@ async def _plan(project_id: int, payload: FloorPlanIn, db: DbDep, user: CurrentU
             raise _unprocessable(f"«{s.name}» es un terreno: el plano de vivienda une ambientes interiores")
         rooms.append(Room(sid, s.name, [(float(v[0]), float(v[1])) for v in s.vertices or []]))
     try:
-        plan = build_floor_plan(rooms, [Join(j.a_survey, j.a_wall, j.b_survey, j.b_wall, j.thickness_m) for j in payload.joins])
+        plan = build_floor_plan(rooms, [
+            Join(j.a_survey, j.a_wall, j.b_survey, j.b_wall, j.thickness_m, a_point=j.a_point, b_point=j.b_point)
+            for j in payload.joins
+        ])
     except GeometryError as exc:
         raise _unprocessable(str(exc)) from None
     return project.name, plan
