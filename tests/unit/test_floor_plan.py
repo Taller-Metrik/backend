@@ -116,3 +116,23 @@ def test_dxf_vivienda(evidencia):
     dxf = floor_plan_dxf(plan, "Casa Perez", scale_denominator=100)
     evidencia["obtenido"] = f"{len(dxf)} caracteres"
     assert "AMBIENTES" in dxf and "Sala" in dxf and "Cocina" in dxf and "AREA TOTAL" in dxf
+
+
+@pytest.mark.evidencia(
+    id="BU-102",
+    nombre="Unir un ambiente en L por un muro de su entrante",
+    requisito="RF-25",
+    objetivo="Verificar que el lado de afuera se decide por la normal del muro y no por el centroide, que en un "
+    "ambiente cóncavo puede caer del otro lado del muro.",
+    entrada="Base 3×4 m (muro este, lado 2) y ambiente en L de 6×6 m con brazo de 2 m, unido por el muro del "
+    "entrante x = 2 (lado 4); espesor 0,15 m",
+    esperado="El ambiente en L queda entero a la derecha de x = 3,15 m y sin advertencia de superposición",
+)
+def test_unir_ambiente_concavo(evidencia):
+    base = Room(1, "Dormitorio", _rect(3, 4))
+    ele = Room(2, "Sala-comedor", [(0.0, 0.0), (6.0, 0.0), (6.0, 2.0), (2.0, 2.0), (2.0, 6.0), (0.0, 6.0)])
+    plan = build_floor_plan([base, ele], [Join(1, 1, 2, 3, 0.15)])
+    v = next(r for r in plan.rooms if r.survey_id == 2).vertices
+    evidencia["obtenido"] = f"x mínima={min(x for x, _ in v):.3f}, advertencias={plan.warnings}"
+    assert min(x for x, _ in v) == pytest.approx(3.15, abs=1e-6)
+    assert not any("superpon" in w for w in plan.warnings)
