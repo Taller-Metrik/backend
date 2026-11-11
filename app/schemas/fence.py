@@ -26,6 +26,9 @@ class FenceIn(BaseModel):
     )
     overhead_pct: float = Field(default=10.0, ge=0, le=50, description="Gastos generales (%)")
     profit_pct: float = Field(default=5.0, ge=0, le=50, description="Utilidad (%)")
+    use_catalog: bool = Field(
+        default=True, description="Completar con el catálogo (tienda o precio propio) las partidas sin precio escrito"
+    )
 
 
 class TakeoffItemOut(BaseModel):
@@ -73,3 +76,4 @@ class FenceOut(BaseModel):
     assumptions: list[str]
     notes: list[str]
     budget: BudgetOut | None
+    price_sources: dict[str, str] = Field(default_factory=dict, description="Origen de cada precio: store, user o input")
