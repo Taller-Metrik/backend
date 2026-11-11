@@ -285,6 +285,7 @@ def gps_polygon(
     simplify_epsilon_m: float | None = None,
     use_kalman: bool = True,
     transport: str = "walk",
+    corners: list[Point] | None = None,
 ) -> GpsPolygon:
     """Convierte el recorrido GPS de un área en un polígono métrico con su incertidumbre (RF-08, RF-18 a RF-21).
 
@@ -292,6 +293,9 @@ def gps_polygon(
       promediadas (método stop-and-go, ver `gps_precision`).
     - Si no, se usa el recorrido continuo; si no se indica `simplify_epsilon_m`, se usa 2 × la precisión
       mediana: el ruido residual genera un zigzag que infla el perímetro (el área es mucho más robusta).
+    - Si el celular envía `corners` (al menos 3), son las esquinas ya ajustadas allá (poligonal con el cierre
+      repartido y el GPS de cada tramo), en metros respecto de la **primera** lectura enviada: se usan tal cual
+      como vértices y cada una recibe la σ típica del método calculado aquí.
     """
     profile = TRANSPORT_PROFILES.get(transport, TRANSPORT_PROFILES["walk"])
     max_accuracy_m = max_accuracy_m if max_accuracy_m is not None else profile.max_accuracy_m
@@ -324,6 +328,12 @@ def gps_polygon(
         if len(vertices) < 3:
             raise GeometryError("El recorrido no forma un polígono: quedan menos de 3 vértices (EX-05)")
         sigmas = [track_residual_sigma(raw, vertices, exclude_radius_m=simplify_epsilon_m)] * len(vertices)
+
+    if corners and len(corners) >= 3:
+        typical = statistics.median(sigmas)
+        vertices = [(float(x), float(y)) for x, y in corners]
+        sigmas = [typical] * len(vertices)
+        origin = (readings[0].lat, readings[0].lon)
 
     return GpsPolygon(
         vertices=vertices,

@@ -127,7 +127,7 @@ class SurveyService:
 
     def _process_exterior(self, payload: SurveyCreate) -> GpsPolygon:
         readings = [GpsReading(**g.model_dump()) for g in payload.gps_points or []]
-        return gps_polygon(readings, transport=payload.transport)
+        return gps_polygon(readings, transport=payload.transport, corners=payload.corners)
 
     async def list(self, project_id: int) -> list[Survey]:
         await self.projects.get(project_id)
