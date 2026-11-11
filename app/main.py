@@ -48,7 +48,7 @@ def create_app(*, use_lifespan: bool = True) -> FastAPI:
         report.router,
         fence.router,
         prices.router,
-        prices.router, fence.router, finishes.router,
+        finishes.router,
     ):
         application.include_router(router, prefix=settings.api_prefix)
     return application
