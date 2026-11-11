@@ -145,7 +145,7 @@ async def test_cerco_con_catalogo(auth_client, project, api, db_session, evidenc
     entrada="Cerco de ladrillo de 2,40 m sin precios escritos",
     esperado=(
         "Muro = 39 × 1,05 ladrillos + 0,025 m³ de mortero 1:4 por m²; concretos, cimiento, sobrecimiento y acero "
-        "con precio de la tienda; encofrado y excavación quedan sin precio"
+        "con precio de la tienda; el trabajo (trazo, excavación, eliminación, encofrado) no entra al presupuesto"
     ),
 )
 async def test_cerco_ladrillo_con_catalogo(auth_client, project, api, db_session, evidencia):
@@ -157,5 +157,35 @@ async def test_cerco_ladrillo_con_catalogo(auth_client, project, api, db_session
     mortar = 0.025 * (8.9 * 42.5 * 8 / 42.5 + 1600 * 8 / 40)  # cemento + arena gruesa del mortero 1:4
     assert lines["wall_m2"] == pytest.approx(39 * 1.05 * 8 + mortar, abs=0.01)
     assert {"columns_concrete_m3", "beam_concrete_m3", "footing_m3", "plinth_m3", "steel_kg"} <= set(lines)
-    assert {"formwork_m2", "excavation_m3"} <= set(body["budget"]["missing_prices"])
+    trabajo = {"layout_m", "excavation_m3", "disposal_m3", "formwork_m2"}
+    items = {i["key"]: i for i in body["items"]}
+    assert all(not items[k]["priceable"] for k in trabajo)
+    assert not trabajo & (set(lines) | set(body["budget"]["missing_prices"]))
     assert body["price_sources"]["wall_m2"] == "store"
+
+
+@pytest.mark.evidencia(
+    id="BI-55",
+    nombre="Cerco de alambre: presupuesto solo de materiales (con la mezcla de los hoyos)",
+    requisito="RF-24 / RF-27",
+    objetivo=(
+        "Verificar que el presupuesto del cerco de alambre lleva solo materiales: el concreto ciclópeo de los hoyos "
+        "se costea con cemento, arena y piedra; el trazo y la excavación son trabajo y quedan como desglose. Un "
+        "precio enviado por una versión anterior de la app para una partida de trabajo se ignora."
+    ),
+    precondiciones="Usuario autenticado con un terreno medido; catálogo actualizado (todos los productos a S/ 8)",
+    entrada="Cerco de alambre con prices = {excavation_m3: 50} (app anterior)",
+    esperado="HTTP 200; concrete_m3 con precio de la tienda; layout_m y excavation_m3 informativas y fuera del presupuesto",
+)
+async def test_cerco_alambre_solo_materiales(auth_client, project, api, db_session, evidencia):
+    await refresh_prices(db_session, _store, delay_s=0)
+    sid = await _terreno(auth_client, project, api)
+    resp = await auth_client.post(f"{api}/surveys/{sid}/fence", json={"kind": "wire", "prices": {"excavation_m3": 50}})
+    body = resp.json()
+    lines = {line["key"]: line["unit_price"] for line in body["budget"]["lines"]}
+    items = {i["key"]: i for i in body["items"]}
+    evidencia["obtenido"] = f"HTTP {resp.status_code}, precios={lines}, sin precio={body['budget']['missing_prices']}"
+    assert resp.status_code == 200
+    assert lines["concrete_m3"] > 0 and body["price_sources"]["concrete_m3"] == "store"
+    assert not items["layout_m"]["priceable"] and not items["excavation_m3"]["priceable"]
+    assert not {"layout_m", "excavation_m3"} & (set(lines) | set(body["budget"]["missing_prices"]))
