@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import app.models  # noqa: F401  (registra los modelos en Base.metadata)
 from app.core.config import settings
 from app.core.database import Base, engine
-from app.routes import auth, fence, field, floor_plan, geometry, gps, ml, prices, projects, report, validation
+from app.routes import auth, fence, field, finishes, floor_plan, geometry, gps, ml, prices, projects, report, validation
 
 
 @asynccontextmanager
@@ -48,6 +48,7 @@ def create_app(*, use_lifespan: bool = True) -> FastAPI:
         report.router,
         fence.router,
         prices.router,
+        prices.router, fence.router, finishes.router,
     ):
         application.include_router(router, prefix=settings.api_prefix)
     return application

@@ -43,8 +43,12 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry("brick_kk18", "Ladrillo King Kong 18 huecos", "und", 1.0, "und", "ladrillo-king-kong-18-huecos"),
     CatalogEntry("barbed_wire_roll", "Alambre de púas", "rollo", 200.0, "m", "alambre-puas-motto-x-200-m"),
     CatalogEntry("rebar_3_8", "Fierro corrugado 3/8\"", "barra", 9.0, "m", "barra-de-construccion-a615-astm-3-8x9-metros"),
+    CatalogEntry("fine_sand_bag", "Arena fina (tarrajeo)", "saco", 40.0, "kg", "arena-fina-unicon-40kg"),
+    CatalogEntry("primer_4gal", "Imprimante", "balde", 4.0, "gal", "imprimante-blanco-4-galones"),
+    CatalogEntry("grout_kg", "Fragua para porcelanato", "bolsa", 1.0, "kg", "fragua-super-porcelana-crema-1kg"),
     CatalogEntry("eucalyptus_post", "Poste de eucalipto 3–4\" × 2,4 m", "und", 1.0, "und", None),
     CatalogEntry("staples_kg", "Grapas para cerco", "kg", 1.0, "kg", None),
+    CatalogEntry("tile_adhesive_bag", "Pegamento para porcelanato", "bolsa", 25.0, "kg", None),
 )
 CATALOG_BY_KEY = {c.key: c for c in CATALOG}
 
