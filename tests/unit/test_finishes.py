@@ -32,7 +32,7 @@ def test_metrado_acabados(evidencia):
     assert obtenido["floor_m2"] == pytest.approx(20.0)
     assert obtenido["ceiling_paint_m2"] == pytest.approx(20.0)
     assert obtenido["baseboard_m"] == pytest.approx(17.1)
-    assert obtenido["plaster_m2"] == pytest.approx(43.34, abs=0.01)
+    assert obtenido["plaster_m2"] == pytest.approx(43.335, abs=0.006)  # 45 − 3,09 + 1,425
     assert obtenido["wall_paint_m2"] == pytest.approx(obtenido["plaster_m2"])
     assert (obtenido["porcelain_box"], obtenido["tile_adhesive_bag"], obtenido["grout_kg"]) == (16, 6, 8)
     assert (obtenido["cement_bag"], obtenido["fine_sand_bag"]) == (6, 30)
