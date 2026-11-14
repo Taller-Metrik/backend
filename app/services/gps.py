@@ -13,6 +13,7 @@ from app.services.gps_core import EARTH_RADIUS_M, GpsReading, haversine, to_enu
 from app.services.gps_precision import (
     filter_by_signal,
     has_fixed_vertices,
+    sigma_from_accuracy,
     stop_and_go_vertices,
     track_residual_sigma,
 )
@@ -313,23 +314,34 @@ def gps_polygon(
     closure_m: float | None = None
     closure_consistent: bool | None = None
     k = COVERAGE_FACTOR
-    if has_fixed_vertices(valid):
-        method: Literal["stop_and_go", "continuous"] = "stop_and_go"
-        fixed = stop_and_go_vertices(valid, origin)
-        vertices, sigmas = fixed.vertices, fixed.sigmas_m
-        closure_m, closure_consistent = fixed.closure_m, fixed.closure_consistent
-        if fixed.closure_dominated:
-            k = CLOSURE_COVERAGE_FACTOR
-    else:
+    phone_corners = corners is not None and len(corners) >= 3
+    try:
+        if has_fixed_vertices(valid):
+            method: Literal["stop_and_go", "continuous"] = "stop_and_go"
+            fixed = stop_and_go_vertices(valid, origin)
+            vertices, sigmas = fixed.vertices, fixed.sigmas_m
+            closure_m, closure_consistent = fixed.closure_m, fixed.closure_consistent
+            if fixed.closure_dominated:
+                k = CLOSURE_COVERAGE_FACTOR
+        else:
+            method = "continuous"
+            if simplify_epsilon_m is None:
+                simplify_epsilon_m = max(1.0, 2 * statistics.median(r.accuracy_m for r in valid))
+            vertices, raw = _continuous_vertices(valid, simplify_epsilon_m, use_kalman, profile.process_noise)
+            if len(vertices) < 3:
+                raise GeometryError("El recorrido no forma un polígono: quedan menos de 3 vértices (EX-05)")
+            sigmas = [track_residual_sigma(raw, vertices, exclude_radius_m=simplify_epsilon_m)] * len(vertices)
+    except GeometryError:
+        if not phone_corners:
+            raise
+        # El GPS solo no arma el polígono (una franja más angosta que su error, como un puente de 1,4 m, o esquinas
+        # marcadas sin detenerse): mandan las esquinas del celular, medidas con los pasos; la σ de cada vértice es
+        # la de una lectura típica
         method = "continuous"
-        if simplify_epsilon_m is None:
-            simplify_epsilon_m = max(1.0, 2 * statistics.median(r.accuracy_m for r in valid))
-        vertices, raw = _continuous_vertices(valid, simplify_epsilon_m, use_kalman, profile.process_noise)
-        if len(vertices) < 3:
-            raise GeometryError("El recorrido no forma un polígono: quedan menos de 3 vértices (EX-05)")
-        sigmas = [track_residual_sigma(raw, vertices, exclude_radius_m=simplify_epsilon_m)] * len(vertices)
+        closure_m, closure_consistent, k = None, None, COVERAGE_FACTOR
+        sigmas = [statistics.median(sigma_from_accuracy(r.accuracy_m) for r in valid)]
 
-    if corners and len(corners) >= 3:
+    if phone_corners:
         typical = statistics.median(sigmas)
         vertices = [(float(x), float(y)) for x, y in corners]
         sigmas = [typical] * len(vertices)
