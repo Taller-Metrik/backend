@@ -52,6 +52,8 @@ class Survey(Base):
     capture: Mapped[dict[str, Any] | None] = mapped_column(JsonType, default=None)  # odómetro, pérdidas, duración
     # Incertidumbre del área y perímetro al 95 % (RF-21); solo recorridos exteriores
     uncertainty: Mapped[dict[str, Any] | None] = mapped_column(JsonType, default=None)
+    # Etapas del procesamiento en el celular ({nombre: [[x, y], ...]}): diagnóstico de dónde nace el error
+    processing_stages: Mapped[dict[str, Any] | None] = mapped_column(JsonType, default=None)
 
     # Validación (medida real del área, opcional; las de cada muro van en ReferenceMeasurement)
     real_area_m2: Mapped[float | None] = mapped_column(Float, default=None)

@@ -115,6 +115,7 @@ class SurveyService:
             "total_edges": total,
             "capture": self._capture(payload),
             "uncertainty": uncertainty,
+            "processing_stages": {k: [list(p) for p in v] for k, v in payload.stages.items()} if payload.stages else None,
         }
 
     @staticmethod

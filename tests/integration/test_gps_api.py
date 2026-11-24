@@ -77,3 +77,35 @@ async def test_recorrido_exterior(auth_client, project, db_session, api, evidenc
     assert resp.status_code == 201
     assert guardado.mode.value == "exterior" and len(guardado.gps_points) > 100
     assert guardado.area_m2 == pytest.approx(6000, rel=0.05)
+
+
+@pytest.mark.evidencia(
+    id="BI-56",
+    nombre="Recorrido exterior guarda el trazo de pantalla y cada etapa del procesamiento",
+    requisito="RF-08",
+    objetivo="Verificar que el trazo antes del suavizado y las etapas del celular se guardan para medir dónde nace el error.",
+    entrada="POST exterior con lecturas GPS, 'points' (trazo en pantalla) y 'stages' (esquinas tocadas, limpias, poligonal)",
+    esperado="HTTP 201, raw_points = trazo enviado, processing_stages con las 3 etapas; etapa con nombre inválido → 422",
+)
+async def test_recorrido_exterior_guarda_trazo_y_etapas(auth_client, project, db_session, api, evidencia):
+    trazo = [[0.0, 0.0], [50.0, 0.3], [100.0, -0.2], [100.2, 60.0], [0.1, 60.2], [0.0, 0.4]]
+    etapas = {
+        "esquinas_tocadas": [[0, 0], [100, 0], [100.5, 1.0], [100, 60], [0, 60]],
+        "esquinas_limpias": [[0, 0], [100, 0], [100, 60], [0, 60]],
+        "poligonal": [[0, 0], [99.8, 0.1], [100.1, 59.9], [0.2, 60]],
+    }
+    base = {"name": "Parque", "mode": "exterior", "gps_points": simulate_gps_walk(TERRENO_100x60, seed=3)}
+    resp = await auth_client.post(f"{api}/projects/{project['id']}/surveys", json={**base, "points": trazo, "stages": etapas})
+    guardado = await db_session.get(Survey, resp.json()["id"])
+    malo = await auth_client.post(
+        f"{api}/projects/{project['id']}/surveys", json={**base, "stages": {"<script>": [[0, 0]]}}
+    )
+    evidencia["obtenido"] = (
+        f"HTTP {resp.status_code}, trazo guardado={len(guardado.raw_points)} puntos, "
+        f"etapas={sorted((guardado.processing_stages or {}).keys())}, nombre inválido → HTTP {malo.status_code}"
+    )
+    assert resp.status_code == 201
+    assert guardado.raw_points == trazo
+    assert guardado.processing_stages == {k: [[float(x), float(y)] for x, y in v] for k, v in etapas.items()}
+    assert guardado.area_m2 == pytest.approx(6000, rel=0.05)  # el trazo no cambia el resultado exterior
+    assert malo.status_code == 422
