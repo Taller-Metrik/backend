@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.models.survey import SurveyMode
 
@@ -72,6 +72,10 @@ class CaptureIn(BaseModel):
     duration_s: float | None = Field(default=None, gt=0)
 
 
+# Nombre de una etapa del procesamiento: minúsculas, dígitos y guion bajo
+StageName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,39}$")]
+
+
 class SurveyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     mode: SurveyMode = SurveyMode.INTERIOR
@@ -84,6 +88,11 @@ class SurveyCreate(BaseModel):
     scale_denominator: int | None = Field(default=None, description="Escala del plano; si no se envía se sugiere")
     capture: CaptureIn | None = Field(default=None, description="Metadatos de captura (modo interior)")
     transport: Literal["walk", "bike", "moto", "car"] = Field(default="walk", description="Cómo se recorrió (modo exterior)")
+    stages: Annotated[dict[StageName, Annotated[list[Point], Field(max_length=200_000)]], Field(max_length=12)] | None = Field(
+        default=None,
+        description="Etapas del procesamiento en el celular (p. ej. esquinas tocadas, limpias, poligonal), en metros "
+        "respecto de la primera lectura; solo para diagnosticar dónde nace el error",
+    )
 
     @model_validator(mode="after")
     def check_inputs(self) -> "SurveyCreate":
