@@ -91,6 +91,13 @@ class FenceTakeoff:
     items: list[TakeoffItem]
     assumptions: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    purchase_basis: str = "max"  # max = «comprar» es el máximo del rango; nominal = la medida
+
+
+PurchaseBasis = Literal["auto", "max", "nominal"]
+# Con «auto», si la U95 del perímetro supera este % se compra según la medida: en un terreno angosto o chico el GPS
+# daba ±40 % y comprar el máximo del rango inflaba todo el material en la misma proporción.
+AUTO_NOMINAL_ABOVE_PCT = 20.0
 
 
 # (descripción, unidad, valor, presupuestable) por clave; "und" y "rollo" son enteras
@@ -218,6 +225,15 @@ def _n(value: float, decimals: int = 2) -> str:
     return f"{value:.{decimals}f}".replace(".", ",")
 
 
+def _purchase_note(basis: str, chosen: PurchaseBasis, u95: float | None, perimeter: float) -> str:
+    if basis == "max":
+        return "La columna «comprar» usa el máximo del rango, redondeado hacia arriba."
+    if chosen == "auto" and u95 is not None:
+        return (f"El margen del GPS (±{_n(100 * u95 / perimeter, 0)} % del perímetro) es muy grande para este terreno: "
+                "«comprar» usa la medida, redondeada hacia arriba, y no el máximo del rango. Confirme con wincha.")
+    return "La columna «comprar» usa la medida, redondeada hacia arriba (no el máximo del rango)."
+
+
 def _texts(params: FenceParams, gates: list[Gate], u95: float | None, perimeter: float) -> tuple[list[str], list[str]]:
     """Supuestos usados y advertencias que debe mostrar el reporte."""
     if params.kind == "wire":
@@ -245,7 +261,6 @@ def _texts(params: FenceParams, gates: list[Gate], u95: float | None, perimeter:
     else:
         notes = ["Metrado referencial calculado sin incertidumbre del perímetro; verificar con wincha antes de comprar."]
     notes += [
-        "La columna «comprar» usa el máximo del rango, redondeado hacia arriba.",
         "Las partidas informativas (desglose) no entran al presupuesto: ya están en su partida total.",
         "No verifica linderos legales del predio.",
     ]
@@ -260,8 +275,13 @@ def fence_takeoff(
     *,
     gates: list[Gate] | None = None,
     perimeter_u95_m: float | None = None,
+    purchase_basis: PurchaseBasis = "auto",
 ) -> FenceTakeoff:
-    """Metrado del cerco con su rango de compra según la incertidumbre del perímetro."""
+    """Metrado del cerco con su rango de compra según la incertidumbre del perímetro.
+
+    `purchase_basis`: «max» compra el máximo del rango; «nominal», la medida; «auto» (por defecto), el máximo salvo que
+    la U95 supere el `AUTO_NOMINAL_ABOVE_PCT` % del perímetro.
+    """
     gates = gates or []
     _validate(sides, gates)
     if perimeter_u95_m is not None and (not math.isfinite(perimeter_u95_m) or perimeter_u95_m < 0):
@@ -275,15 +295,22 @@ def fence_takeoff(
     low = compute([f * max(0.0, (perimeter - u) / perimeter) for f in fenced], gates, params)
     high = compute([f * (perimeter + u) / perimeter for f in fenced], gates, params)
 
+    basis = purchase_basis
+    if basis == "auto":
+        basis = "nominal" if 100 * u / perimeter > AUTO_NOMINAL_ABOVE_PCT else "max"
+
     items = []
     for key, (description, unit, value, priceable) in nominal.items():
         hi = high[key][2]
+        buy = _round_up(value if basis == "nominal" else hi, unit)
         items.append(TakeoffItem(
-            key, description, unit, _fmt(value, unit), _fmt(low[key][2], unit), _fmt(hi, unit), _round_up(hi, unit),
-            priceable,
+            key, description, unit, _fmt(value, unit), _fmt(low[key][2], unit), _fmt(hi, unit), buy, priceable,
         ))
 
     assumptions, notes = _texts(params, gates, perimeter_u95_m, perimeter)
+    # La nota de la base de compra va antes de la de partidas informativas (después de las de incertidumbre)
+    at = next(i for i, n in enumerate(notes) if n.startswith("Las partidas informativas"))
+    notes.insert(at, _purchase_note(basis, purchase_basis, perimeter_u95_m, perimeter))
     return FenceTakeoff(
         kind=params.kind,
         perimeter_m=perimeter,
@@ -292,4 +319,5 @@ def fence_takeoff(
         items=items,
         assumptions=assumptions,
         notes=notes,
+        purchase_basis=basis,
     )

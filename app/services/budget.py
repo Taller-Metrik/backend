@@ -64,9 +64,13 @@ def build_budget(
     profit_pct: float = 5.0,
     igv_pct: float = IGV_PCT,
 ) -> Budget:
-    """Presupuesto con la cantidad a comprar de cada partida × su precio unitario."""
-    priceable = [i for i in items if i.priceable]
-    keys = {i.key for i in priceable}
+    """Presupuesto con la cantidad a comprar de cada partida × su precio unitario.
+
+    Las partidas con cantidad 0 (p. ej. portones cuando no hay) no se listan ni como línea ni como «sin precio»,
+    pero se les puede enviar precio sin error.
+    """
+    keys = {i.key for i in items if i.priceable}
+    priceable = [i for i in items if i.priceable and i.purchase > 0]
     invalid = sorted(set(prices) - keys)
     if invalid:
         informative = {i.key for i in items if not i.priceable}
