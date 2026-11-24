@@ -29,6 +29,10 @@ class FenceIn(BaseModel):
     use_catalog: bool = Field(
         default=True, description="Completar con el catálogo (tienda o precio propio) las partidas sin precio escrito"
     )
+    purchase_basis: Literal["auto", "max", "nominal"] = Field(
+        default="auto",
+        description="Qué comprar: max = máximo del rango; nominal = la medida; auto = máximo salvo que la U95 supere el 20 %",
+    )
 
 
 class TakeoffItemOut(BaseModel):
@@ -77,3 +81,4 @@ class FenceOut(BaseModel):
     notes: list[str]
     budget: BudgetOut | None
     price_sources: dict[str, str] = Field(default_factory=dict, description="Origen de cada precio: store, user o input")
+    purchase_basis: Literal["max", "nominal"] = Field(default="max", description="Base que se usó para «comprar»")

@@ -206,3 +206,50 @@ def test_columnas_porton(evidencia):
     evidencia["obtenido"] = f"portón={_item(t, 'columns_gate').quantity}, confinamiento={_item(t, 'columns').quantity}"
     assert _item(t, "columns_gate").quantity == 2
     assert _item(t, "columns").quantity == 13
+
+
+@pytest.mark.evidencia(
+    id="BU-109",
+    nombre="Comprar según la medida cuando el margen del GPS es muy grande",
+    requisito="RF-27 / RF-21",
+    objetivo=("Verificar que, si la U95 del perímetro supera el 20 %, «comprar» usa la medida y no el máximo del rango "
+              "(un terreno angosto medido con GPS inflaba la compra ~40 %), y que se puede elegir la base a mano."),
+    entrada="Terreno 100×60 m (P = 320 m) con U95 = 9,6 m (3 %) y con U95 = 128 m (40 %); bases auto, nominal y max",
+    esperado=("3 %: comprar = máximo; 40 % auto: comprar = medida redondeada y nota que lo explica; "
+              "nominal fuerza la medida y max fuerza el máximo"),
+)
+def test_base_de_compra(evidencia):
+    chico = fence_takeoff(TERRENO, FenceParams(kind="wire"), perimeter_u95_m=9.6)
+    grande = fence_takeoff(TERRENO, FenceParams(kind="wire"), perimeter_u95_m=128)
+    forzado_max = fence_takeoff(TERRENO, FenceParams(kind="wire"), perimeter_u95_m=128, purchase_basis="max")
+    forzado_nom = fence_takeoff(TERRENO, FenceParams(kind="wire"), perimeter_u95_m=9.6, purchase_basis="nominal")
+    p_chico, p_grande = _item(chico, "posts_total"), _item(grande, "posts_total")
+    evidencia["obtenido"] = (
+        f"3 %: base={chico.purchase_basis} comprar={p_chico.purchase} (máx {p_chico.max}); "
+        f"40 %: base={grande.purchase_basis} comprar={p_grande.purchase} (medida {p_grande.quantity}, máx {p_grande.max})"
+    )
+    assert chico.purchase_basis == "max" and p_chico.purchase == p_chico.max
+    assert grande.purchase_basis == "nominal"
+    assert p_grande.purchase == p_grande.quantity < p_grande.max
+    assert _item(grande, "concrete_m3").purchase == pytest.approx(_item(grande, "concrete_m3").quantity, abs=0.01)
+    assert any("40" in n and "medida" in n for n in grande.notes)
+    assert _item(forzado_max, "posts_total").purchase == _item(forzado_max, "posts_total").max
+    assert _item(forzado_nom, "posts_total").purchase == _item(forzado_nom, "posts_total").quantity
+
+
+@pytest.mark.evidencia(
+    id="BU-110",
+    nombre="Partidas en cero fuera del presupuesto",
+    requisito="RF-24",
+    objetivo="Verificar que una partida con cantidad 0 (p. ej. portones cuando no hay) no aparece como «sin precio» ni como línea.",
+    entrada="Cerco de alambre sin portones; precio solo de postes",
+    esperado="«gates» no está en missing_prices ni en las líneas; las demás partidas sin precio sí se listan",
+)
+def test_partidas_en_cero(evidencia):
+    t = fence_takeoff(TERRENO, FenceParams(kind="wire"))
+    sin_precio = build_budget(t.items, {"posts_total": 8})
+    con_precio = build_budget(t.items, {"posts_total": 8, "gates": 600})
+    evidencia["obtenido"] = f"sin precio={sin_precio.missing_prices}, líneas con precio de portón={[l.key for l in con_precio.lines]}"
+    assert "gates" not in sin_precio.missing_prices
+    assert "wire_rolls" in sin_precio.missing_prices
+    assert "gates" not in [line.key for line in con_precio.lines]

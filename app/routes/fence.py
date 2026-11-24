@@ -37,6 +37,7 @@ async def survey_fence(survey_id: int, payload: FenceIn, db: DbDep, user: Curren
             params,
             gates=[Gate(g.side, g.width_m) for g in payload.gates],
             perimeter_u95_m=float(u95) if valid_u95 else None,
+            purchase_basis=payload.purchase_basis,
         )
         prices: dict[str, float] = {}
         sources: dict[str, str] = {}
