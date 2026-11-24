@@ -189,3 +189,25 @@ async def test_cerco_alambre_solo_materiales(auth_client, project, api, db_sessi
     assert lines["concrete_m3"] > 0 and body["price_sources"]["concrete_m3"] == "store"
     assert not items["layout_m"]["priceable"] and not items["excavation_m3"]["priceable"]
     assert not {"layout_m", "excavation_m3"} & (set(lines) | set(body["budget"]["missing_prices"]))
+
+
+@pytest.mark.evidencia(
+    id="BI-57",
+    nombre="POST /surveys/{id}/fence: base de compra",
+    requisito="RF-27",
+    objetivo="Verificar que la API acepta la base de compra y devuelve la que usó.",
+    precondiciones="Usuario autenticado con un terreno medido con esquinas fijadas",
+    entrada="Cerco de alambre con purchase_basis = nominal; luego un valor inválido",
+    esperado="HTTP 200 con purchase_basis = nominal y comprar = medida; HTTP 422 con el valor inválido",
+)
+async def test_cerco_base_de_compra_api(auth_client, project, api, evidencia):
+    sid = await _terreno(auth_client, project, api)
+    resp = await auth_client.post(f"{api}/surveys/{sid}/fence", json={"kind": "wire", "purchase_basis": "nominal"})
+    malo = await auth_client.post(f"{api}/surveys/{sid}/fence", json={"kind": "wire", "purchase_basis": "todo"})
+    body = resp.json()
+    postes = next(i for i in body["items"] if i["key"] == "posts_total")
+    evidencia["obtenido"] = f"HTTP {resp.status_code}, base={body.get('purchase_basis')}, postes {postes}; inválido HTTP {malo.status_code}"
+    assert resp.status_code == 200
+    assert body["purchase_basis"] == "nominal"
+    assert postes["purchase"] == postes["quantity"]
+    assert malo.status_code == 422
