@@ -87,7 +87,7 @@ Pestaña *Variables*. Solo hacen falta si se quiere cambiar el valor por defecto
 
 | Variable | Por defecto | Uso |
 |----------|-------------|-----|
-| `GCP_REGION` | `southamerica-west1` | Región de Cloud Run y Artifact Registry |
+| `GCP_REGION` | `us-east4` | Región de Cloud Run y Artifact Registry |
 | `CLOUD_RUN_SERVICE` | `metrik-api` | Nombre del servicio (el job de migraciones se llama `<servicio>-migraciones`) |
 | `GAR_REPOSITORY` | `metrik` | Repositorio de Artifact Registry; se crea solo si no existe |
 | `GCP_RUNTIME_SERVICE_ACCOUNT` | La cuenta del JSON | Para ejecutar la API con otra cuenta distinta a la que despliega |

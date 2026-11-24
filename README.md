@@ -297,7 +297,7 @@ según el tráfico, sin administrar servidores.
 | 🐘 Base de datos | **PostgreSQL gestionado** (Neon) | Fuera de GCP; conexión con SSL y compatible con su *pooler* |
 | 🔑 Acceso de GitHub | **Cuenta de servicio** `metrik-cicd` | Su llave JSON se guarda como secreto `GCP_CREDENTIALS`; el proyecto y la cuenta se leen del propio JSON |
 
-- **Región:** `southamerica-west1` (Santiago), la más cercana a Perú. Se cambia con la variable `GCP_REGION`.
+- **Región:** `us-east4` (Virginia del Norte), la que usa `cd.yml` por defecto. Se cambia con la variable `GCP_REGION`.
 - **URL pública:** Cloud Run asigna una del tipo `https://metrik-api-<hash>.<región>.run.app`. Se ve en
   **GitHub → Actions → CD → entorno `produccion`** o con
   `gcloud run services describe metrik-api --region <REGIÓN> --format='value(status.url)'`.
@@ -447,7 +447,7 @@ Opcionalmente, en la pestaña ***Variables***, solo si quieres cambiar los valor
 
 | Variable | Por defecto |
 |----------|-------------|
-| `GCP_REGION` | `southamerica-west1` |
+| `GCP_REGION` | `us-east4` |
 | `CLOUD_RUN_SERVICE` | `metrik-api` |
 | `GAR_REPOSITORY` | `metrik` |
 | `GCP_RUNTIME_SERVICE_ACCOUNT` | la cuenta del JSON |
